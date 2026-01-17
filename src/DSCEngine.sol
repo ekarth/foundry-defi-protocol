@@ -5,7 +5,10 @@ pragma solidity 0.8.19;
 import {DecentralizedStableCoin} from "./DecentralizedStableCoin.sol";
 import {ReentrancyGuard} from "@openzepplin/contracts/security/ReentrancyGuard.sol";
 import {IERC20} from "@openzepplin/contracts/token/ERC20/IERC20.sol";
- 
+import {ERC20} from "@openzepplin/contracts/token/ERC20/ERC20.sol";
+import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+
+
 /**
  * @title DSCEngine
  * @author Killer
@@ -26,20 +29,32 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenCannotBeCollateralized(address token);
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error DSCEngine__CollateralDepositFailed(address user, address token);
+    error DSCEngine__ExceedsMaxMintAmount(uint256 canBeMinted);
+    error DSCEngine__InvalidCollateralPrice(int price);
+    // error DSCEngine__
 
+    // struct UserAccount {
+    //     mapping(address collateralTokenAddress => uint256 amount) collateralDeposited;
+    //     uint256 healthFactor;
+    //     mapping(address collateralTokenAddress => uint256 dscMinted) dscMintedAgainstDeposites;
+    // }
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
     DecentralizedStableCoin private immutable i_dsc;
 
     mapping(address token => address priceFeed) private s_priceFeed;
-    mapping(address user => mapping(address collateralAddress => uint256 amount)) s_collateralDeposited;
+    address[] private s_collateralTokensAddresses;
+    mapping(address user => mapping(address collateralAddress => uint256 amount)) private s_collateralDeposited;
+    mapping(address user => uint256 dscMinted) private s_DscMintedByUser;
+    uint256 private s_totalDscMinted;
 
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
-    event CollateralDeposited(address user, address indexed collateralAddress, uint256 collateralAmount);
+    event CollateralDeposited(address indexed user, address indexed collateralAddress, uint256 collateralAmount);
+    event DscMinted(address indexed user, uint256 amount);
 
 
     /*//////////////////////////////////////////////////////////////
@@ -76,6 +91,7 @@ contract DSCEngine is ReentrancyGuard {
         uint256 count = tokenAddresses.length;
         for(uint256 i = 0; i < count; i++) {
             s_priceFeed[tokenAddresses[i]] = tokenPriceFeedAddresses[i];
+            s_collateralTokensAddresses.push(tokenAddresses[i]);
         }
 
         i_dsc = DecentralizedStableCoin(dscAddress);
@@ -131,8 +147,12 @@ contract DSCEngine is ReentrancyGuard {
 
     }
     
-    function mintDsc() external {
-
+    function mintDsc(uint256 amount) 
+        external 
+        greaterThanZero(amount)
+        nonReentrant 
+    {
+        s_DscMintedByUser[msg.sender] += amount;
     }
 
     function liquidate() external {
@@ -143,9 +163,69 @@ contract DSCEngine is ReentrancyGuard {
 
     }
 
+/**
+ * @dev Returns the Total Decentralized Stable Coin tokens minted by the contract.
+ */
+    function getTotalDscMinted() external view returns(uint256) {
+        return s_totalDscMinted;
+    }
+
     /*//////////////////////////////////////////////////////////////
                             PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+/**
+ * @dev Returns the number of Decentralized Stable Coin tokens minted and the total collateral value in USD deposited by `user`.
+ * @param user address for which the details are returned.
+ * @return totalDscMinted Amount of Decentralized Stable Coin tokens minted by the user.
+ * @return totalCollateralValue Value of collateral deposited by `user` in USD.
+ */
+    function getAccountInfo(address user) public view returns(uint256 totalDscMinted, uint256 totalCollateralValue) {
+        totalDscMinted = s_DscMintedByUser[user];
+        totalCollateralValue = getAccountCollateralValueInUsd(user);
+    }
+/**
+ * @dev Returns the total collateral value in USD for an address. It loops through all the collateralized tokens.
+ * @param account address for which the total collateral value is calculated and returned.
+ */
+    function getAccountCollateralValueInUsd(address account) public view returns(uint256 totalCollateralValue) {
+        uint256 collateralCount = s_collateralTokensAddresses.length;
+        for (uint256 i = 0; i < collateralCount; i++) {
+            address tokenAddress = s_collateralTokensAddresses[i];
+            uint256 amountTokens = s_collateralDeposited[account][tokenAddress];
+            // Skip the calculation if address has no tokens for a collateral token
+            if (amountTokens == 0) {
+                continue;
+            }
+            totalCollateralValue += _getCollateralValueInUsd(tokenAddress, amountTokens);
+        }
+    }
+    /*//////////////////////////////////////////////////////////////
+                           INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+/**
+ * @dev Calculates the price of the collateral in USD. It fetches the price of the collateral token, performs the calculation to sync the decimals for token and the price returned by the price feed, performs multiplication of token amount with current price and divides the result by token decimals to get the price in USD. 
+ * @param token address of a collateral token
+ * @param amount count of collateral tokens
+ * @notice This function uses Chainlink Price Feeds to get the token current USD value.
+ */
+    function _getCollateralValueInUsd(address token, uint256 amount) internal view returns(uint256) {
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeed[token]);
+        (, int256 answer,,,) = priceFeed.latestRoundData();
+        if (answer < 0) {
+            revert DSCEngine__InvalidCollateralPrice(answer);
+        }
+        uint8 collateralTokenDecimals = _getCollateralTokenDecimals(token);
+        uint8 decimalsInPriceFeed = priceFeed.decimals();
+        uint256 price = uint256(answer) * (10 ** (collateralTokenDecimals - decimalsInPriceFeed));
+        uint256 amountInUsd = (amount * price)/ ( 10 ** collateralTokenDecimals);
+        return amountInUsd;
+    }
 
-
+/**
+ * @dev Returns the decimals for a token.
+ * @param token address of a token for which decimals need to be calculated
+ */
+    function _getCollateralTokenDecimals(address token) internal view returns(uint8) {
+        return ERC20(token).decimals();
+    }
 }
