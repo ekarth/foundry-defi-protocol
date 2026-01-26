@@ -65,15 +65,20 @@ contract HelperConfig is Script, CodeConstants {
             "Wrapped Bitcoin",
             "wBTC",
             msg.sender,
+            // forge-lint: disable-next-line(unsafe-typecast)
             uint256(WBTC_START_PRICE)
         );
         ERC20Mock weth = new ERC20Mock(
             "Wrapped Ethereum",
             "wETH",
             msg.sender,
+            // forge-lint: disable-next-line(unsafe-typecast)
             uint256(WETH_START_PRICE)
         );
         vm.stopBroadcast();
+
+        console.log("Deployed WBTC with addreess:", address(wbtc));
+        console.log("Deployed WETH with addreess:", address(weth));
 
         activeNetworkConfig = NetworkConfig({
             wbtc: address(wbtc),
