@@ -43,10 +43,6 @@ contract HelperConfig is Script, CodeConstants {
             activeNetworkConfig = chainIdToNetworkConfigMapping[block.chainid];
     }
 
-    // function run() external {
-
-    // }
-
     function getSepoliaEthConfig() internal view returns (NetworkConfig memory) {
         return NetworkConfig ({
             wbtc: SEPOLIA_WBTC,
@@ -62,7 +58,7 @@ contract HelperConfig is Script, CodeConstants {
             return activeNetworkConfig;
         }
 
-        vm.startBroadcast();
+        vm.startBroadcast(ANVIL_DEFAULT_DEPLOYER_KEY);
         MockV3Aggregator wbtcUsdPriceFeed = new MockV3Aggregator(WBTC_DECIMALS, WBTC_START_PRICE);
         MockV3Aggregator wethUsdPriceFeed = new MockV3Aggregator(WETH_DECIMALS, WETH_START_PRICE);
         ERC20Mock wbtc = new ERC20Mock(
