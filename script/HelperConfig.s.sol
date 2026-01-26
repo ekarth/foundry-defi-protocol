@@ -40,7 +40,7 @@ contract HelperConfig is Script, CodeConstants {
         } else {
             chainIdToNetworkConfigMapping[block.chainid] = getOrCreateAnvilConfig();
         }
-            activeNetworkConfig = chainIdToNetworkConfigMapping[block.chainid];
+        activeNetworkConfig = chainIdToNetworkConfigMapping[block.chainid];
     }
 
     function getSepoliaEthConfig() internal view returns (NetworkConfig memory) {

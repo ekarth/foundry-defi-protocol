@@ -11,8 +11,8 @@ contract DeployDsc is Script {
     address[] collateralTokenPriceFeedAddresses;
     
     
-    function run() external returns (DecentralizedStableCoin dsc, DSCEngine dscEngine) {
-        HelperConfig config = new HelperConfig();
+    function run() external returns (DecentralizedStableCoin dsc, DSCEngine dscEngine, HelperConfig config) {
+        config = new HelperConfig();
         HelperConfig.NetworkConfig memory networkConfig = config.getActiveNetworkConfig();
 
         _setCollateralTokenAddresses(networkConfig);
