@@ -29,21 +29,19 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenCannotBeCollateralized(address token);
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error DSCEngine__CollateralDepositFailed(address user, address token);
-    error DSCEngine__ExceedsMaxMintAmount(uint256 canBeMinted);
-    error DSCEngine__InvalidCollateralPrice(int price);
-    // error DSCEngine__
+    error DSCEngine__ExceedsMaxDscMintAmount();
+    error DSCEngine__InvalidCollateralPrice(int256 price);
+    error DSCEngine__DscMintFailed();
 
-    // struct UserAccount {
-    //     mapping(address collateralTokenAddress => uint256 amount) collateralDeposited;
-    //     uint256 healthFactor;
-    //     mapping(address collateralTokenAddress => uint256 dscMinted) dscMintedAgainstDeposites;
-    // }
+
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
     DecentralizedStableCoin private immutable i_dsc;
     uint256 private constant LIQUIDATION_THRESHOLD = 50; // borrow half of the collateral
     uint256 private constant LIQUIDATION_PRECISION = 100;
+    uint256 private constant PRECISION = 1e18;
+    uint256 private constant MIN_HEALTH_FACTOR = 1e18;
 
 
     mapping(address token => address priceFeed) private s_priceFeed;
@@ -109,14 +107,23 @@ contract DSCEngine is ReentrancyGuard {
     function depositCollateralAndMintDsc() external {
 
     }
+
     /**
-     * @notice follows CEI (Checks, Effects, Interactions) pattern
-     * @dev Deposit the collatera
-     * @param collateralTokenAddress address of the token to be deposit as collateral
-     * @param collateralAmount amount of tokens to be used as collateral
-     * Requirements:
-     *  1. `collateralTokenAddress` must match either wBTC or wETH address.
-     *  2. `collateralAmount` should be greater than 0.
+     * @notice Deposits collateral into the protocol
+     * @dev
+     *  1. Updates internal collateral accounting for the caller.
+     *  2. Emits a {CollateralDeposited} event.
+     *  3. Transfers collateral tokens from caller to this contract.
+     *  4. Follows CEI (Checks, Effects, Interactions) pattern.
+     * 
+     * @param collateralTokenAddress Address of the ERC20 token to be deposit as collateral
+     * @param collateralAmount amount of collateral tokens to deposit (in token decimals)
+     * 
+     * Reverts if:
+     *  1. `collateralTokenAddress` is not an allowed collateral token.
+     *  2. `collateralAmount` is zero.
+     *  3. ERC20 `transferFrom` fails.
+     * 
      */
     function depositCollateral(
         address collateralTokenAddress,
@@ -131,7 +138,8 @@ contract DSCEngine is ReentrancyGuard {
         emit CollateralDeposited(msg.sender, collateralTokenAddress, collateralAmount);
 
         // transfer tokens from user EOA
-        bool success = IERC20(collateralTokenAddress).transferFrom(msg.sender, address(this), collateralAmount);
+        bool success = IERC20(collateralTokenAddress).transferFrom(
+            msg.sender, address(this), collateralAmount);
 
         if (!success) {
             revert DSCEngine__CollateralDepositFailed(msg.sender, collateralTokenAddress);
@@ -150,12 +158,30 @@ contract DSCEngine is ReentrancyGuard {
 
     }
     
-    function mintDsc(uint256 amount) 
-        external 
-        greaterThanZero(amount)
-        nonReentrant 
-    {
+    /**
+     * @notice Mints DSC to the caller.
+     * @dev 
+     *  1. Increases the `s_totalDscMinted` by creating new tokens.
+     *  2. Updates the count of `DSC` tokens minted by the caller.
+     *  3. Calls the `DecentralizedStableCoin` contract to mint tokens to caller.
+     * 
+     * Reverts if:
+     *  1. The health factor for the user falls below `MIN_HEALTH_FACTOR` after minting.
+     *  2. DecentralizedStableCoin `mint` operation fails.
+     * 
+     * @param amount Amount of tokens to  transfer to the caller.
+     *
+     */
+    function mintDsc(uint256 amount) external greaterThanZero(amount) {
         s_DscMintedByUser[msg.sender] += amount;
+        s_totalDscMinted += amount;
+
+        _revertIfHealthFactorIsBroken(msg.sender);
+
+        bool success = i_dsc.mint(msg.sender, amount);
+        if(!success) {
+            revert DSCEngine__DscMintFailed();
+        }
     }
 
     function liquidate() external {
@@ -204,6 +230,7 @@ contract DSCEngine is ReentrancyGuard {
             totalCollateralValue += _getCollateralValueInUsd(tokenAddress, amountTokens);
         }
     }
+
     /*//////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -236,9 +263,56 @@ contract DSCEngine is ReentrancyGuard {
         return ERC20(token).decimals();
     }
 
+    function _getMaxDscMintableAgainstCollateral(uint256 collateralValue) internal pure returns (uint256) {
+        return (LIQUIDATION_THRESHOLD * collateralValue) / LIQUIDATION_PRECISION;
+    }
+
     function _healthFactor(address account) internal view returns(uint256) {
         (uint256 totalDscMinted, uint256 collateralValueInUsd) = getAccountInfo(account);
         return (collateralValueInUsd * 100) / totalDscMinted;
         
     }
+
+    function _revertIfHealthFactorIsBroken(address account) internal {
+        (uint256 dscMinted, uint256 collateralValue) = getAccountInfo(account);
+        if (_healthFactor(collateralValue, dscMinted) < MIN_HEALTH_FACTOR) {
+            // uint256 maxDscCanBeMinted = 
+            revert DSCEngine__ExceedsMaxDscMintAmount();
+        }
+    }
+
+    function _healthFactor(uint256 collateralValue, uint256 dscMinted) internal pure returns (uint256) {
+        return _calculateHealthFactor(collateralValue, dscMinted);
+    }
+
+/**@notice Returns health factor for a user's account.
+ * @dev 
+ *  1. Assumes the value of DSC is 1 USD always.
+ *  2. Calculates the max DSC that can be minted using the collateral's value. 
+ *  3. Returns the health factor by calculating the percentage of DSC minted against the maximum DSC mintable against a collateral value (with 1e18 precision). 
+ * @param collateralValue Value in USD with 1e18 precision.
+ * @param dscMinted Number of DSC minted against the collateral.
+ */
+    function _calculateHealthFactor(
+        uint256 collateralValue, 
+        uint256 dscMinted
+    )
+        internal 
+        pure
+        returns (uint256) 
+    {
+        if (dscMinted == 0) {
+            return 0;
+        }
+        uint256 collateralAdjustedForThreshold = (LIQUIDATION_THRESHOLD * collateralValue) / LIQUIDATION_PRECISION;
+        return (collateralAdjustedForThreshold * PRECISION) / dscMinted;
+    }
+
+    function _maxDscMintable(address account) internal view returns(uint256) {
+        (uint256 dscMinted, uint256 collateralValue) = getAccountInfo(account);
+        uint256 maxDscMintable = _getMaxDscMintableAgainstCollateral(collateralValue);
+        return maxDscMintable - dscMinted;
+    } 
+
+    
 }
