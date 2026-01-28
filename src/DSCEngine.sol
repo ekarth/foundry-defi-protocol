@@ -102,10 +102,36 @@ contract DSCEngine is ReentrancyGuard {
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-
-
-    function depositCollateralAndMintDsc() external {
-
+    /**
+     * @notice This function deposits collateral and mints DSC to the caller.
+     * @dev
+     *  1. Calls `depositCollateral` function to deposit collateral from caller.
+     *  2. Calls `mintDsc` function to mint DSC to caller.
+     *  3. It is protected by reentrancy guard.
+     * Reverts if:
+     *  1. `collateralAmount` is 0.
+     *  2. `collateralTokenAddress` is not an allowed collateral token.
+     *  3. Collateral transfer fails.
+     *  4. `amountDscToMint` is 0.
+     *  5. The resulting health factor while simulating DSC minting is below `MIN_HEALTH_FACTOR`.
+     *  6. The DSC mint operation fails.
+     * 
+     * @param collateralTokenAddress Address of the ERC20 token to be deposit as collateral
+     * @param collateralAmount amount of collateral tokens to deposit (in token decimals)
+     * @param amountDscToMint Amount of DSC tokens to mint to the caller (18 decimals).
+     * 
+     */
+    
+    function depositCollateralAndMintDsc(
+        address collateralTokenAddress,
+        uint256 collateralAmount,
+        uint256 amountDscToMint
+    ) 
+        external 
+        nonReentrant 
+    {
+        depositCollateral(collateralTokenAddress, collateralAmount);
+        mintDsc(amountDscToMint);
     }
 
     function redeemCollateralForDsc() external {
@@ -151,7 +177,7 @@ contract DSCEngine is ReentrancyGuard {
      * Reverts if:
      *  1. `collateralTokenAddress` is not an allowed collateral token.
      *  2. `collateralAmount` is zero.
-     *  3. ERC20 `transferFrom` fails.
+     *  3. ERC20 `transferFrom` fails for collateral token.
      * 
      * @param collateralTokenAddress Address of the ERC20 token to be deposit as collateral
      * @param collateralAmount amount of collateral tokens to deposit (in token decimals)
