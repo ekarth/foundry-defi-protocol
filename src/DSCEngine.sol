@@ -108,44 +108,6 @@ contract DSCEngine is ReentrancyGuard {
 
     }
 
-    /**
-     * @notice Deposits collateral into the protocol
-     * @dev
-     *  1. Updates internal collateral accounting for the caller.
-     *  2. Emits a {CollateralDeposited} event.
-     *  3. Transfers collateral tokens from caller to this contract.
-     *  4. Follows CEI (Checks, Effects, Interactions) pattern.
-     * 
-     * Reverts if:
-     *  1. `collateralTokenAddress` is not an allowed collateral token.
-     *  2. `collateralAmount` is zero.
-     *  3. ERC20 `transferFrom` fails.
-     * 
-     * @param collateralTokenAddress Address of the ERC20 token to be deposit as collateral
-     * @param collateralAmount amount of collateral tokens to deposit (in token decimals)
-     * 
-     */
-    function depositCollateral(
-        address collateralTokenAddress,
-        uint256 collateralAmount
-    ) 
-        external 
-        greaterThanZero(collateralAmount) 
-        isTokenAllowed(collateralTokenAddress) 
-        nonReentrant 
-    {
-        s_collateralDeposited[msg.sender][collateralTokenAddress] += collateralAmount;
-        emit CollateralDeposited(msg.sender, collateralTokenAddress, collateralAmount);
-
-        // transfer tokens from user EOA
-        bool success = IERC20(collateralTokenAddress).transferFrom(
-            msg.sender, address(this), collateralAmount);
-
-        if (!success) {
-            revert DSCEngine__CollateralDepositFailed(msg.sender, collateralTokenAddress);
-        }
-    }
-
     function redeemCollateralForDsc() external {
 
     }
@@ -156,32 +118,6 @@ contract DSCEngine is ReentrancyGuard {
 
     function burnDsc() external {
 
-    }
-    
-    /**
-     * @notice Mints DSC to the caller if collateralization requirements are met.
-     * @dev 
-     *  1. Increases the `s_totalDscMinted` by creating new tokens.
-     *  2. Updates the count of `DSC` tokens minted by the caller.
-     *  3. Calls the {DecentralizedStableCoin} contract to mint tokens to caller.
-     * 
-     * Reverts if:
-     *  1. Caller's health factor falls below `MIN_HEALTH_FACTOR` while simulating DSC mint operation.
-     *  2. {DecentralizedStableCoin} `mint` operation to mint tokens to caller fails.
-     * 
-     * @param amount Amount of DSC tokens to mint to the caller (18 decimals).
-     *
-     */
-    function mintDsc(uint256 amount) external greaterThanZero(amount) {
-        s_DscMintedByUser[msg.sender] += amount;
-        s_totalDscMinted += amount;
-
-        _revertIfHealthFactorIsBroken(msg.sender);
-
-        bool success = i_dsc.mint(msg.sender, amount);
-        if(!success) {
-            revert DSCEngine__DscMintFailed();
-        }
     }
 
     function liquidate() external {
@@ -204,6 +140,44 @@ contract DSCEngine is ReentrancyGuard {
                             PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /**
+     * @notice Deposits collateral into the protocol
+     * @dev
+     *  1. Updates internal collateral accounting for the caller.
+     *  2. Emits a {CollateralDeposited} event.
+     *  3. Transfers collateral tokens from caller to this contract.
+     *  4. Follows CEI (Checks, Effects, Interactions) pattern.
+     * 
+     * Reverts if:
+     *  1. `collateralTokenAddress` is not an allowed collateral token.
+     *  2. `collateralAmount` is zero.
+     *  3. ERC20 `transferFrom` fails.
+     * 
+     * @param collateralTokenAddress Address of the ERC20 token to be deposit as collateral
+     * @param collateralAmount amount of collateral tokens to deposit (in token decimals)
+     * 
+     */
+    function depositCollateral(
+        address collateralTokenAddress,
+        uint256 collateralAmount
+    ) 
+        public 
+        greaterThanZero(collateralAmount) 
+        isTokenAllowed(collateralTokenAddress) 
+        nonReentrant 
+    {
+        s_collateralDeposited[msg.sender][collateralTokenAddress] += collateralAmount;
+        emit CollateralDeposited(msg.sender, collateralTokenAddress, collateralAmount);
+
+        // transfer tokens from user EOA
+        bool success = IERC20(collateralTokenAddress).transferFrom(
+            msg.sender, address(this), collateralAmount);
+
+        if (!success) {
+            revert DSCEngine__CollateralDepositFailed(msg.sender, collateralTokenAddress);
+        }
+    }
+    
     /**
      * @notice Returns the DSC tokens minted & USD value of collateral deposited by the `user`.
      * @dev 
@@ -241,6 +215,31 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
+    /**
+     * @notice Mints DSC to the caller if collateralization requirements are met.
+     * @dev 
+     *  1. Increases the `s_totalDscMinted` by creating new tokens.
+     *  2. Updates the count of `DSC` tokens minted by the caller.
+     *  3. Calls the {DecentralizedStableCoin} contract to mint tokens to caller.
+     * 
+     * Reverts if:
+     *  1. Caller's health factor falls below `MIN_HEALTH_FACTOR` while simulating DSC mint operation.
+     *  2. {DecentralizedStableCoin} `mint` operation to mint tokens to caller fails.
+     * 
+     * @param amount Amount of DSC tokens to mint to the caller (18 decimals).
+     *
+     */
+    function mintDsc(uint256 amount) public greaterThanZero(amount) {
+        s_DscMintedByUser[msg.sender] += amount;
+        s_totalDscMinted += amount;
+
+        _revertIfHealthFactorIsBroken(msg.sender);
+
+        bool success = i_dsc.mint(msg.sender, amount);
+        if(!success) {
+            revert DSCEngine__DscMintFailed();
+        }
+    }
     /*//////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
