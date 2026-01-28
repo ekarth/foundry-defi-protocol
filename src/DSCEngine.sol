@@ -116,13 +116,13 @@ contract DSCEngine is ReentrancyGuard {
      *  3. Transfers collateral tokens from caller to this contract.
      *  4. Follows CEI (Checks, Effects, Interactions) pattern.
      * 
-     * @param collateralTokenAddress Address of the ERC20 token to be deposit as collateral
-     * @param collateralAmount amount of collateral tokens to deposit (in token decimals)
-     * 
      * Reverts if:
      *  1. `collateralTokenAddress` is not an allowed collateral token.
      *  2. `collateralAmount` is zero.
      *  3. ERC20 `transferFrom` fails.
+     * 
+     * @param collateralTokenAddress Address of the ERC20 token to be deposit as collateral
+     * @param collateralAmount amount of collateral tokens to deposit (in token decimals)
      * 
      */
     function depositCollateral(
@@ -159,17 +159,17 @@ contract DSCEngine is ReentrancyGuard {
     }
     
     /**
-     * @notice Mints DSC to the caller.
+     * @notice Mints DSC to the caller if collateralization requirements are met.
      * @dev 
      *  1. Increases the `s_totalDscMinted` by creating new tokens.
      *  2. Updates the count of `DSC` tokens minted by the caller.
-     *  3. Calls the `DecentralizedStableCoin` contract to mint tokens to caller.
+     *  3. Calls the {DecentralizedStableCoin} contract to mint tokens to caller.
      * 
      * Reverts if:
-     *  1. The health factor for the user falls below `MIN_HEALTH_FACTOR` after minting.
-     *  2. DecentralizedStableCoin `mint` operation fails.
+     *  1. Caller's health factor falls below `MIN_HEALTH_FACTOR` while simulating DSC mint operation.
+     *  2. {DecentralizedStableCoin} `mint` operation to mint tokens to caller fails.
      * 
-     * @param amount Amount of tokens to  transfer to the caller.
+     * @param amount Amount of DSC tokens to mint to the caller (18 decimals).
      *
      */
     function mintDsc(uint256 amount) external greaterThanZero(amount) {
@@ -193,7 +193,8 @@ contract DSCEngine is ReentrancyGuard {
     }
 
 /**
- * @dev Returns the Total Decentralized Stable Coin tokens minted by the contract.
+ * @notice Returns the Total Decentralized Stable Coin tokens minted by the protocol.
+ * @dev This value represents the aggregate DSC minted across all users.
  */
     function getTotalDscMinted() external view returns(uint256) {
         return s_totalDscMinted;
@@ -204,10 +205,14 @@ contract DSCEngine is ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @dev Returns the number of Decentralized Stable Coin tokens minted and the total collateral value in USD deposited by `user`.
-     * @param user address for which the details are returned.
+     * @notice Returns the DSC tokens minted & USD value of collateral deposited by the `user`.
+     * @dev 
+     *  1. DSC tokens are returned with 18 decimals.
+     *  2. USD value of collateral is returned with 1e18 precision.
+     * 
+     * @param user address for which the account information is returned.
      * @return totalDscMinted Amount of Decentralized Stable Coin tokens minted by the user.
-     * @return totalCollateralValue Value of collateral deposited by `user` in USD.
+     * @return totalCollateralValue Totla Value of collateral deposited by `user` in USD.
      */
     function getAccountInfo(address user) public view returns(uint256 totalDscMinted, uint256 totalCollateralValue) {
         totalDscMinted = s_DscMintedByUser[user];
@@ -215,8 +220,13 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     /**
-     * @dev Returns the total collateral value in USD for an address. It loops through all the collateralized tokens.
+     * @notice Returns the total collateral value in USD deposited by an `account`.
+     * @dev
+     *  1. Iterate over all supported collateral tokens.
+     *  2. Utilises Chainlink Price Feeds to fetch current price of collateral tokens.
+     *  3. Returns the total collateral value in USD with 1e18 precision.
      * @param account address for which the total collateral value is calculated and returned.
+     * @return totalCollateralValue USD value for all collateral tokens deposited by the `account`.
      */
     function getAccountCollateralValueInUsd(address account) public view returns(uint256 totalCollateralValue) {
         uint256 collateralCount = s_collateralTokensAddresses.length;
@@ -236,12 +246,22 @@ contract DSCEngine is ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
     
     /**
-     * @dev Calculates the price of the collateral in USD. It fetches the price of the collateral token, performs the calculation to sync the decimals for token and the price returned by the price feed, performs multiplication of token amount with current price and divides the result by token decimals to get the price in USD. 
+     * @dev Calculates the USD value of a collateral token amount. 
+     * Fetches latest price of collateral token using Chainlink Price Feeds
+     * Normalizes token decimals and price feed decimals
+     * Returns total value of the collateral tokens in USD with 1e18 precision.
      * @param token address of a collateral token
      * @param amount count of collateral tokens
-     * @notice This function uses Chainlink Price Feeds to get the token current USD value.
+     * @return amountInUsd USD value of the collateral deposited 
      */
-    function _getCollateralValueInUsd(address token, uint256 amount) internal view returns(uint256) {
+    function _getCollateralValueInUsd(
+        address token, 
+        uint256 amount
+    ) 
+        internal 
+        view 
+        returns(uint256 amountInUsd) 
+    {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeed[token]);
         (, int256 answer,,,) = priceFeed.latestRoundData();
         if (answer < 0) {
@@ -251,29 +271,26 @@ contract DSCEngine is ReentrancyGuard {
         uint8 decimalsInPriceFeed = priceFeed.decimals();
         // forge-lint: disable-next-line(unsafe-typecast)
         uint256 price = uint256(answer) * (10 ** (collateralTokenDecimals - decimalsInPriceFeed));
-        uint256 amountInUsd = (amount * price)/ ( 10 ** collateralTokenDecimals);
+        amountInUsd = (amount * price)/ ( 10 ** collateralTokenDecimals);
         return amountInUsd;
     }
 
     /**
-     * @dev Returns the decimals for a token.
-     * @param token address of a token for which decimals need to be calculated
+     * @dev Returns the decimals for a supported collateral ERC20 token.
+     * @param token address of a ERC20 token.
      */
     function _getCollateralTokenDecimals(address token) internal view returns(uint8) {
         return ERC20(token).decimals();
     }
 
-    function _getMaxDscMintableAgainstCollateral(uint256 collateralValue) internal pure returns (uint256) {
-        return (LIQUIDATION_THRESHOLD * collateralValue) / LIQUIDATION_PRECISION;
-    }
 
-    function _healthFactor(address account) internal view returns(uint256) {
-        (uint256 totalDscMinted, uint256 collateralValueInUsd) = getAccountInfo(account);
-        return (collateralValueInUsd * 100) / totalDscMinted;
-        
-    }
-
-    function _revertIfHealthFactorIsBroken(address account) internal {
+    /**
+     * @dev Reverts if an `account`'s health factor is less than MIN_HEALTH_FACTOR.
+     * Uses current collateral value in USD and the DSC tokens minted against the collateral.
+     * Reverts with {DSCEngine__ExceedsMaxDscMintAmount} if undercollateralized.
+     * @param account Address to check health factor for.
+     */
+    function _revertIfHealthFactorIsBroken(address account) internal view {
         (uint256 dscMinted, uint256 collateralValue) = getAccountInfo(account);
         if (_healthFactor(collateralValue, dscMinted) < MIN_HEALTH_FACTOR) {
             // uint256 maxDscCanBeMinted = 
@@ -281,17 +298,23 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
+    /**
+     * @dev Returns the health factor with 1e18 precision.
+     * Utilises `_calculateHealthFactor` to calculate the health factor.
+     * @param collateralValue Total collateral value in USD with 1e18 precision.
+     * @param dscMinted Amount of DSC tokens minted against collateral (18 decimals).
+     */
     function _healthFactor(uint256 collateralValue, uint256 dscMinted) internal pure returns (uint256) {
         return _calculateHealthFactor(collateralValue, dscMinted);
     }
 
 /**@notice Returns health factor for a user's account.
  * @dev 
- *  1. Assumes the value of DSC is 1 USD always.
- *  2. Calculates the max DSC that can be minted using the collateral's value. 
- *  3. Returns the health factor by calculating the percentage of DSC minted against the maximum DSC mintable against a collateral value (with 1e18 precision). 
+ *  1. Assumes 1 DSC = 1 USD always.
+ *  2. Applies liquidation threshold to the collateral value. 
+ *  3. Returns a value with 1e18 precision. 
  * @param collateralValue Value in USD with 1e18 precision.
- * @param dscMinted Number of DSC minted against the collateral.
+ * @param dscMinted Number of DSC minted against the collateral (18 decimals).
  */
     function _calculateHealthFactor(
         uint256 collateralValue, 
@@ -304,15 +327,9 @@ contract DSCEngine is ReentrancyGuard {
         if (dscMinted == 0) {
             return type(uint256).max;
         }
-        uint256 collateralAdjustedForThreshold = (LIQUIDATION_THRESHOLD * collateralValue) / LIQUIDATION_PRECISION;
+        uint256 collateralAdjustedForThreshold = (LIQUIDATION_THRESHOLD * collateralValue) / LIQUIDATION_PRECISION; 
         return (collateralAdjustedForThreshold * PRECISION) / dscMinted;
     }
-
-    function _maxDscMintable(address account) internal view returns(uint256) {
-        (uint256 dscMinted, uint256 collateralValue) = getAccountInfo(account);
-        uint256 maxDscMintable = _getMaxDscMintableAgainstCollateral(collateralValue);
-        return maxDscMintable - dscMinted;
-    } 
 
     
 }
