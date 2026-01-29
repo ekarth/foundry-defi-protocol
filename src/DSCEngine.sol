@@ -139,15 +139,20 @@ contract DSCEngine is ReentrancyGuard {
         mintDsc(amountDscToMint);
     }
 
-    function redeemCollateralForDsc() external {
-
+    function redeemCollateralForDsc(
+        address collateralTokenAddress,
+        uint256 collateralAmount,
+        uint256 amountDscToBurn
+    ) external {
+        burnDsc(amountDscToBurn);
+        redeemCollateral(collateralTokenAddress, collateralAmount);
     }
 
     function redeemCollateral(
         address collateralTokenAddress,
         uint256 collateralAmount
     ) 
-        external 
+        public 
         greaterThanZero(collateralAmount) 
         nonReentrant
     {
@@ -167,7 +172,7 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
-    function burnDsc(uint256 amountDscToBurn) external greaterThanZero(amountDscToBurn) {
+    function burnDsc(uint256 amountDscToBurn) public greaterThanZero(amountDscToBurn) {
         if (s_DscMintedByUser[msg.sender] < amountDscToBurn) {
             amountDscToBurn = s_DscMintedByUser[msg.sender];
         }
