@@ -29,7 +29,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenCannotBeCollateralized(address token);
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error DSCEngine__CollateralDepositFailed(address user, address token);
-    error DSCEngine__ExceedsMaxDscMintAmount();
+    error DSCEngine__BreaksHealthFactor();
     error DSCEngine__InvalidCollateralPrice(int256 price);
     error DSCEngine__DscMintFailed();
 
@@ -312,14 +312,14 @@ contract DSCEngine is ReentrancyGuard {
     /**
      * @dev Reverts if an `account`'s health factor is less than MIN_HEALTH_FACTOR.
      * Uses current collateral value in USD and the DSC tokens minted against the collateral.
-     * Reverts with {DSCEngine__ExceedsMaxDscMintAmount} if undercollateralized.
+     * Reverts with {DSCEngine__BreaksHealthFactor} if undercollateralized.
      * @param account Address to check health factor for.
      */
     function _revertIfHealthFactorIsBroken(address account) internal view {
         (uint256 dscMinted, uint256 collateralValue) = getAccountInfo(account);
         if (_healthFactor(collateralValue, dscMinted) < MIN_HEALTH_FACTOR) {
             // uint256 maxDscCanBeMinted = 
-            revert DSCEngine__ExceedsMaxDscMintAmount();
+            revert DSCEngine__BreaksHealthFactor();
         }
     }
 
