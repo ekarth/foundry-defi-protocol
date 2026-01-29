@@ -32,8 +32,9 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__BreaksHealthFactor();
     error DSCEngine__InvalidCollateralPrice(int256 price);
     error DSCEngine__DscMintFailed();
-    error DSCEngine__NotEnoughCollateralToRedeem();
+    error DSCEngine__RedeemMoreCollateralThanDeposited();
     error DSCEngine__CollateralRedeemFailed(address user, address token);
+    error DSCEngine__TransferFailed();
 
 
     /*//////////////////////////////////////////////////////////////
@@ -59,6 +60,7 @@ contract DSCEngine is ReentrancyGuard {
     event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
     event CollateralRedeemed(address indexed user, address indexed token, uint256 amount);
     event DscMinted(address indexed user, uint256 amount);
+    event DscBurned(address indexed user, uint256 amount);
 
 
     /*//////////////////////////////////////////////////////////////
@@ -150,7 +152,7 @@ contract DSCEngine is ReentrancyGuard {
         nonReentrant
     {
         if (collateralAmount > s_collateralDeposited[msg.sender][collateralTokenAddress]) {
-            revert DSCEngine__NotEnoughCollateralToRedeem();
+            revert DSCEngine__RedeemMoreCollateralThanDeposited();
         }
 
         s_collateralDeposited[msg.sender][collateralTokenAddress] -= collateralAmount;
@@ -165,7 +167,19 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
-    function burnDsc() external {
+    function burnDsc(uint256 amountDscToBurn) external greaterThanZero(amountDscToBurn) {
+        if (s_DscMintedByUser[msg.sender] < amountDscToBurn) {
+            amountDscToBurn = s_DscMintedByUser[msg.sender];
+        }
+
+        s_DscMintedByUser[msg.sender] = 0;
+        bool success = i_dsc.transferFrom(msg.sender, address(this), amountDscToBurn);
+
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+        i_dsc.burn(amountDscToBurn);
+        emit DscBurned(msg.sender, amountDscToBurn);
 
     }
 
