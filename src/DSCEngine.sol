@@ -32,6 +32,8 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__BreaksHealthFactor();
     error DSCEngine__InvalidCollateralPrice(int256 price);
     error DSCEngine__DscMintFailed();
+    error DSCEngine__NotEnoughCollateralToRedeem();
+    error DSCEngine__CollateralRedeemFailed(address user, address token);
 
 
     /*//////////////////////////////////////////////////////////////
@@ -54,7 +56,8 @@ contract DSCEngine is ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
-    event CollateralDeposited(address indexed user, address indexed collateralAddress, uint256 collateralAmount);
+    event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
+    event CollateralRedeemed(address indexed user, address indexed token, uint256 amount);
     event DscMinted(address indexed user, uint256 amount);
 
 
@@ -138,8 +141,28 @@ contract DSCEngine is ReentrancyGuard {
 
     }
 
-    function redeemCollateral() external {
+    function redeemCollateral(
+        address collateralTokenAddress,
+        uint256 collateralAmount
+    ) 
+        external 
+        greaterThanZero(collateralAmount) 
+        nonReentrant
+    {
+        if (collateralAmount > s_collateralDeposited[msg.sender][collateralTokenAddress]) {
+            revert DSCEngine__NotEnoughCollateralToRedeem();
+        }
 
+        s_collateralDeposited[msg.sender][collateralTokenAddress] -= collateralAmount;
+
+        _revertIfHealthFactorIsBroken(msg.sender);
+
+        emit CollateralRedeemed(msg.sender, collateralTokenAddress, collateralAmount);
+        bool success = IERC20(collateralTokenAddress).transfer(msg.sender, collateralAmount);
+
+        if (!success) {
+            revert DSCEngine__CollateralRedeemFailed(msg.sender, collateralTokenAddress);
+        }
     }
 
     function burnDsc() external {
@@ -261,6 +284,7 @@ contract DSCEngine is ReentrancyGuard {
 
         _revertIfHealthFactorIsBroken(msg.sender);
 
+        emit DscMinted(msg.sender, amount);
         bool success = i_dsc.mint(msg.sender, amount);
         if(!success) {
             revert DSCEngine__DscMintFailed();
