@@ -139,6 +139,26 @@ contract DSCEngine is ReentrancyGuard {
         mintDsc(amountDscToMint);
     }
 
+    /**
+     * @notice Burns minted DSC tokens and redeems collateral for the user in a single transaction.
+     * @dev
+     * 1. Calls {burnDsc} to burn the specified amount of DSC tokens from the caller.
+     * 2. Calls {redeemCollateral} to withdraw the specified amount of collateral tokens to the caller.
+     * 3. The order is important: DSC is burned before collateral is redeemed to ensure health factor checks are accurate.
+     *
+     * Reverts if:
+     *  1. `amountDscToBurn` is zero.
+     *  2. `collateralAmount` is zero.
+     *  3. `collateralTokenAddress` is not a supported collateral token.
+     *  4. The caller tries to redeem more collateral than deposited.
+     *  5. The resulting health factor after redeeming collateral falls below `MIN_HEALTH_FACTOR`..
+     *  6. ERC20 transfer for collateral fails.
+     *  7. DSC transfer or burn fails.
+     *
+     * @param collateralTokenAddress Address of the ERC20 token to redeem as collateral.
+     * @param collateralAmount Amount of collateral tokens to redeem (in token decimals).
+     * @param amountDscToBurn Amount of DSC tokens to burn from the caller (18 decimals).
+     */
     function redeemCollateralForDsc(
         address collateralTokenAddress,
         uint256 collateralAmount,
@@ -146,46 +166,6 @@ contract DSCEngine is ReentrancyGuard {
     ) external {
         burnDsc(amountDscToBurn);
         redeemCollateral(collateralTokenAddress, collateralAmount);
-    }
-
-    function redeemCollateral(
-        address collateralTokenAddress,
-        uint256 collateralAmount
-    ) 
-        public 
-        greaterThanZero(collateralAmount) 
-        nonReentrant
-    {
-        if (collateralAmount > s_collateralDeposited[msg.sender][collateralTokenAddress]) {
-            revert DSCEngine__RedeemMoreCollateralThanDeposited();
-        }
-
-        s_collateralDeposited[msg.sender][collateralTokenAddress] -= collateralAmount;
-
-        _revertIfHealthFactorIsBroken(msg.sender);
-
-        emit CollateralRedeemed(msg.sender, collateralTokenAddress, collateralAmount);
-        bool success = IERC20(collateralTokenAddress).transfer(msg.sender, collateralAmount);
-
-        if (!success) {
-            revert DSCEngine__CollateralRedeemFailed(msg.sender, collateralTokenAddress);
-        }
-    }
-
-    function burnDsc(uint256 amountDscToBurn) public greaterThanZero(amountDscToBurn) {
-        if (s_DscMintedByUser[msg.sender] < amountDscToBurn) {
-            amountDscToBurn = s_DscMintedByUser[msg.sender];
-        }
-
-        s_DscMintedByUser[msg.sender] = 0;
-        bool success = i_dsc.transferFrom(msg.sender, address(this), amountDscToBurn);
-
-        if (!success) {
-            revert DSCEngine__TransferFailed();
-        }
-        i_dsc.burn(amountDscToBurn);
-        emit DscBurned(msg.sender, amountDscToBurn);
-
     }
 
     function liquidate() external {
@@ -196,10 +176,10 @@ contract DSCEngine is ReentrancyGuard {
 
     }
 
-/**
- * @notice Returns the Total Decentralized Stable Coin tokens minted by the protocol.
- * @dev This value represents the aggregate DSC minted across all users.
- */
+    /**
+     * @notice Returns the Total Decentralized Stable Coin tokens minted by the protocol.
+     * @dev This value represents the aggregate DSC minted across all users.
+     */
     function getTotalDscMinted() external view returns(uint256) {
         return s_totalDscMinted;
     }
@@ -207,6 +187,34 @@ contract DSCEngine is ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                             PUBLIC FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
+    /**
+     * @notice Burns the DSC token from caller address.
+     * @dev
+     * 1. Set the `amountDscToBurn` to the count of DSC tokens minted by the caller if `amountDscToBurn` exceeds total DSC tokens Minted by the caller.
+     * 2. Decreases the `s_totalDscMinted` by destroying tokens.
+     * 3. Transfers DSC tokens from caller to contract & burn them using `TransferFrom` function from {DecentralisedStableCoin} contract.
+     * 4. Emits a {DscBurned} event.
+     * 
+     * Reverts if:
+     *  1. If {DecentralizedStableCoin-transferFrom} fails to move DSC tokens from caller to contract.
+     * @param amountDscToBurn Count of `DecentralizedStableCoin` tokens to burn
+     */
+    function burnDsc(uint256 amountDscToBurn) public greaterThanZero(amountDscToBurn) {
+        if (s_DscMintedByUser[msg.sender] < amountDscToBurn) {
+            amountDscToBurn = s_DscMintedByUser[msg.sender];
+        }
+        s_totalDscMinted -= amountDscToBurn;
+        s_DscMintedByUser[msg.sender] = 0;
+        bool success = i_dsc.transferFrom(msg.sender, address(this), amountDscToBurn);
+
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+        i_dsc.burn(amountDscToBurn);
+        emit DscBurned(msg.sender, amountDscToBurn);
+
+    }
 
     /**
      * @notice Deposits collateral into the protocol
@@ -309,6 +317,45 @@ contract DSCEngine is ReentrancyGuard {
             revert DSCEngine__DscMintFailed();
         }
     }
+
+    /**
+     * @notice Redeems the collateral from the protocol.
+     * @dev 
+     *  1. Updates internal collateral accounting for the caller.
+     *  2. Emits a {CollateralRedeemed} event.
+     *  3. Transfers collateral token from the contract to the caller.
+     * Reverts if:
+     *  1. `collateralAmount` is more than the tokens deposited.
+     *  2. Caller's health factor falls below `MIN_HEALTH_FACTOR` while simulating redeem
+     *  3. ERC20 `transferFrom` fails for collateral token.
+     * 
+     * @param collateralTokenAddress Address of ERC20 token used as collateral
+     * @param collateralAmount Count of tokens to redeem/withdraw
+     */
+    function redeemCollateral(
+        address collateralTokenAddress,
+        uint256 collateralAmount
+    ) 
+        public 
+        greaterThanZero(collateralAmount) 
+        nonReentrant
+    {
+        if (collateralAmount > s_collateralDeposited[msg.sender][collateralTokenAddress]) {
+            revert DSCEngine__RedeemMoreCollateralThanDeposited();
+        }
+
+        s_collateralDeposited[msg.sender][collateralTokenAddress] -= collateralAmount;
+
+        _revertIfHealthFactorIsBroken(msg.sender);
+
+        emit CollateralRedeemed(msg.sender, collateralTokenAddress, collateralAmount);
+        bool success = IERC20(collateralTokenAddress).transfer(msg.sender, collateralAmount);
+
+        if (!success) {
+            revert DSCEngine__CollateralRedeemFailed(msg.sender, collateralTokenAddress);
+        }
+    }
+
     /*//////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
