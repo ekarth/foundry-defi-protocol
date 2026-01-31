@@ -2,7 +2,8 @@
 pragma solidity 0.8.19;
 
 
-import {ERC20Burnable, ERC20} from "@openzepplin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import {ERC20Burnable} from "@openzepplin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import {ERC20} from "@openzepplin/contracts/token/ERC20/ERC20.sol";
 import {Ownable} from "@openzepplin/contracts/access/Ownable.sol";
 
 /**
