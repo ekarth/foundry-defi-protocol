@@ -168,7 +168,8 @@ contract DSCEngine is ReentrancyGuard {
         redeemCollateral(collateralTokenAddress, collateralAmount);
     }
 
-    function liquidate() external {
+    function liquidate(address collateralTokenAddress, address user, uint256 debtToPay) external isTokenAllowed(collateralTokenAddress) nonReentrant {
+
 
     }
 
@@ -291,6 +292,20 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
+    function getAmountCollateralFromUSD(
+        address collateralTokenAddress, 
+        uint256 usdValueInWei
+    ) 
+    isTokenAllowed 
+    public 
+    returns(uint256) {
+        (, int price,,,) = AggregatorV3Interface(s_priceFeed[collateralTokenAddress]).latestRoundData();
+        if (price < 0) {
+            revert DSCEngine__InvalidCollateralPrice(price);
+        }
+        return (usdValueInWei * PRECISION) / (uint256(price) * (10 ** _getCollateralTokenDecimals(collateralTokenAddress)));
+    }
+    
     /**
      * @notice Mints DSC to the caller if collateralization requirements are met.
      * @dev 
@@ -359,7 +374,7 @@ contract DSCEngine is ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    
+
     /**
      * @dev Calculates the USD value of a collateral token amount. 
      * Fetches latest price of collateral token using Chainlink Price Feeds
