@@ -33,21 +33,13 @@ contract DSCEngineTest is Test , CodeConstants{
         weth = networkConfig.weth;
         wbtcUsdPriceFeed = networkConfig.wbtcUsdPriceFeed;
         wethUsdPriceFeed = networkConfig.wethUsdPriceFeed;
-    }
-
-    modifier fundWbtcAndApproveForDSCEngine() {
         ERC20Mock(wbtc).mint(DEPOSITER, STARTING_WBTC_BALANCE);
         ERC20Mock(wbtc).approveInternal(DEPOSITER, address(dscEngine), STARTING_WBTC_BALANCE);
-        _;
-    }
-
-    modifier fundWethAndApproveForDSCEngine() {
         ERC20Mock(weth).mint(DEPOSITER, STARTING_WETH_BALANCE);
         ERC20Mock(weth).approveInternal(DEPOSITER, address(dscEngine), STARTING_WETH_BALANCE);
-        _;
     }
 
-    function testAccountCollateralValueInUsdWhenWbtcCollateral() public fundWbtcAndApproveForDSCEngine {
+    function testAccountCollateralValueInUsdWhenWbtcCollateral() public {
         uint256 DEPOSIT_AMOUNT = 0.5 ether;
 
         uint256 expectedUsdValue = 45_000 ether; // 90_000 * .5 +  = 45_000e18
@@ -60,7 +52,7 @@ contract DSCEngineTest is Test , CodeConstants{
         assertEq(totalCollateralValueInUsd, expectedUsdValue);
     }
 
-    function testAccountCollateralValueInUsdWhenWethCollateral() fundWethAndApproveForDSCEngine public {
+    function testAccountCollateralValueInUsdWhenWethCollateral() public {
         uint256 DEPOSIT_AMOUNT = 7.205 ether;
 
         uint256 expectedUsdValue = 21_615 ether; // 3000 * 7.205 +  = 21_615e18
@@ -74,10 +66,7 @@ contract DSCEngineTest is Test , CodeConstants{
 
     }
 
-    function testAccountCollateralValueInUsdWhenBothCollateral() 
-        fundWbtcAndApproveForDSCEngine 
-        fundWethAndApproveForDSCEngine 
-        public {
+    function testAccountCollateralValueInUsdWhenBothCollateral() public {
 
         uint256 expectedUsdValue = 135_000 ether; // 3000 * 15 + 90_000 * 1 = 135_000e18
 
