@@ -171,6 +171,28 @@ contract DSCEngine is ReentrancyGuard {
         redeemCollateral(collateralTokenAddress, collateralAmount);
     }
 
+    /**
+     * @notice Liquidates an undercollateralized user by repaying their DSC debt in exchange for their collateral plus a 10% liquidation bonus.
+     *
+     * @dev
+     * - The caller repays `debtToCover` DSC on behalf of `user`
+     * - The protocol converts the repaid debt into an equivalent amount of collateral
+     * - A liquidation bonus is added and transferred to the caller
+     * - The user's DSC debt is reduced and their collateral is seized
+     * - The liquidation must improve the user's health factor
+     * - The liquidator must remain sufficiently collateralized after liquidation
+     *
+     * Reverts if:
+     * - `debtToCover` is zero
+     * - `collateralTokenAddress` is not an allowed collateral token
+     * - The user's health factor is not below `MIN_HEALTH_FACTOR`
+     * - The liquidation does not improve the user's health factor
+     * - The liquidator's health factor falls below `MIN_HEALTH_FACTOR`
+     *
+     * @param collateralTokenAddress Address of the collateral token to seize
+     * @param user Address of the undercollateralized account being liquidated
+     * @param debtToCover Amount of DSC debt to repay on behalf of the user (18 decimals)
+     */
     function liquidate(
         address collateralTokenAddress, 
         address user, 
@@ -201,14 +223,28 @@ contract DSCEngine is ReentrancyGuard {
 
     }
 
+    /**
+     * @notice Returns the health factor for a user with 1e18 precision.
+     * @param user Address of user to return health factor for.
+     */
     function getHealthFactor(address user) external view returns(uint256) {
         return _healthFactor(user);
     }
 
+    /**
+     * @notice Returns the count of ERC20 collateral tokens deposited by a user.
+     * @dev Reverts if `collateralTokenAddress` is not a supported collateral token.
+     * @param collateralTokenAddress Address of a ERC20 collateral token.
+     * @param user Address of the user.
+     */
     function getCollateralDepositedByUser(address collateralTokenAddress, address user) external view isTokenAllowed(collateralTokenAddress) returns(uint256) {
         return s_collateralDeposited[user][collateralTokenAddress];
     }
 
+    /**
+     * @notice Returns the DSC tokens minted by the user (in 18 decimals).
+     * @param user Address of the user.
+     */
     function getDscMintedByUser(address user) external view returns(uint256) {
         return s_DscMintedByUser[user];
     }
@@ -226,16 +262,19 @@ contract DSCEngine is ReentrancyGuard {
     //////////////////////////////////////////////////////////////*/
 
     /**
-     * @notice Burns the DSC token from caller address.
+     * @notice Burns DSC tokens from the caller’s balance.
+     *
      * @dev
-     * 1. Set the `amountDscToBurn` to the count of DSC tokens minted by the caller if `amountDscToBurn` exceeds total DSC tokens Minted by the caller.
-     * 2. Decreases the `s_totalDscMinted` by destroying tokens.
-     * 3. Transfers DSC tokens from caller to contract & burn them using `TransferFrom` function from {DecentralisedStableCoin} contract.
-     * 4. Emits a {DscBurned} event.
-     * 
+     * - Delegates burning logic to the internal `_burnDsc` function.
+     * - Burns DSC on behalf of the caller.
+     * - Enforces that the caller remains sufficiently collateralized.
+     *
      * Reverts if:
-     *  1. If {DecentralizedStableCoin-transferFrom} fails to move DSC tokens from caller to contract.
-     * @param amountDscToBurn Count of `DecentralizedStableCoin` tokens to burn
+     * - `amountDscToBurn` is zero.
+     * - The underlying DSC transfer fails.
+     * - The caller’s health factor falls below `MIN_HEALTH_FACTOR`.
+     *
+     * @param amountDscToBurn Amount of DSC tokens to burn (18 decimals).
      */
     function burnDsc(uint256 amountDscToBurn) public greaterThanZero(amountDscToBurn) {
         _burnDsc(msg.sender, msg.sender, amountDscToBurn);
@@ -317,6 +356,22 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
+    /**
+     * @notice Returns the amount of collateral tokens equivalent to a given USD value.
+     *
+     * @dev
+     * - Uses Chainlink price feeds to fetch the current USD price of the collateral token.
+     * - Assumes `usdValueInWei` is provided with 1e18 precision.
+     * - Returns the amount of collateral tokens in the token's native decimals.
+     *
+     * Reverts if:
+     * - `collateralTokenAddress` is not a supported ERC20 collateral token.
+     * - The price returned by the price feed is negative.
+     *
+     * @param collateralTokenAddress Address of the collateral token.
+     * @param usdValueInWei USD value to convert, with 1e18 precision.
+     * @return collateralAmount Amount of collateral tokens equivalent to the USD value.
+     */
     function getAmountCollateralFromUSD(
         address collateralTokenAddress, 
         uint256 usdValueInWei
@@ -360,18 +415,21 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     /**
-     * @notice Redeems the collateral from the protocol.
-     * @dev 
-     *  1. Updates internal collateral accounting for the caller.
-     *  2. Emits a {CollateralRedeemed} event.
-     *  3. Transfers collateral token from the contract to the caller.
+     * @notice Redeems collateral tokens from the protocol for the caller.
+     *
+     * @dev
+     * - Delegates redemption logic to the internal `_redeemCollateral` function.
+     * - Withdraws collateral on behalf of the caller.
+     * - Enforces that the caller remains sufficiently collateralized.
+     *
      * Reverts if:
-     *  1. `collateralAmount` is more than the tokens deposited.
-     *  2. Caller's health factor falls below `MIN_HEALTH_FACTOR` while simulating redeem
-     *  3. ERC20 `transferFrom` fails for collateral token.
-     * 
-     * @param collateralTokenAddress Address of ERC20 token used as collateral
-     * @param collateralAmount Count of tokens to redeem/withdraw
+     * - `collateralAmount` is zero.
+     * - The caller attempts to redeem more collateral than deposited.
+     * - Transfer {ERC20-transferFrom} call fails for the collateral token.
+     * - The caller's health factor falls below `MIN_HEALTH_FACTOR` after redeeming the collateral tokens.
+     *
+     * @param collateralTokenAddress Address of the ERC20 token used as collateral
+     * @param collateralAmount Amount of collateral tokens to redeem
      */
     function redeemCollateral(
         address collateralTokenAddress,
@@ -389,6 +447,23 @@ contract DSCEngine is ReentrancyGuard {
                     INTERNAL & PRIVATE FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
+    /**
+     * @dev Burns DSC tokens on behalf of a user.
+     *
+     * - Caps the burn amount to the user’s total minted DSC.
+     * - Decreases the `s_totalDscMinted` by destroying tokens.
+     * - Updates user DSC tokens minted count.
+     * - Transfers DSC tokens from `from` to this contract
+     * - Calls the {DecentralisedStableCoin-burn} to burn the tokens
+     * - Emits a {DscBurned} event
+     *
+     * Reverts if:
+     * - The DSC transfer {DecentralizedStableCoin-transferFrom} call fails.
+     *
+     * @param onBehalfOf Address whose DSC debt is reduced.
+     * @param from Address from which DSC tokens are transferred.
+     * @param amountDscToBurn Amount of DSC tokens to burn (18 decimals).
+     */
     function _burnDsc(address onBehalfOf, address from, uint256 amountDscToBurn) private {
         if (s_DscMintedByUser[onBehalfOf] < amountDscToBurn) {
             amountDscToBurn = s_DscMintedByUser[onBehalfOf];
