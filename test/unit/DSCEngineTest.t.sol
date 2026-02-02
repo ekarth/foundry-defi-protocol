@@ -25,6 +25,12 @@ contract DSCEngineTest is Test , CodeConstants{
     uint256 STARTING_WETH_BALANCE = 15 ether;
     uint256 STARTING_WBTC_BALANCE = 1 ether;
 
+    // DSCEngine contract events
+    event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
+    event CollateralRedeemed(address indexed from, address indexed to, address indexed token, uint256 amount);
+    event DscMinted(address indexed user, uint256 amount);
+    event DscBurned(address indexed user, uint256 amount);
+
     function setUp() public {
         deployer = new DeployDsc();
         (dsc, dscEngine, config) = deployer.run();
@@ -39,9 +45,60 @@ contract DSCEngineTest is Test , CodeConstants{
         ERC20Mock(weth).approveInternal(DEPOSITER, address(dscEngine), STARTING_WETH_BALANCE);
     }
 
+    // modifier to deposit WETH to the DSCEngine contract
+    // Checks both when the amount is 0 -> revert condition & Successful deposit with event validation
+    modifier depositWeth(uint256 amount) {
+        if (amount == 0) {
+            vm.expectRevert(DSCEngine.DSCEngine__ZeroAmount.selector);
+            dscEngine.depositCollateral(weth, amount);
+        } else {
+            vm.expectEmit(true, true, false, true, address(dscEngine));
+            emit CollateralDeposited(DEPOSITER, weth, amount);
+            vm.prank(DEPOSITER);
+            dscEngine.depositCollateral(weth, amount);
+        }    
+        _;
+    }
+
+    // modifier to deposit WBTC to the DSCEngine contract
+    // Checks both when the amount is 0 -> revert condition & Successful deposit with event validation
+    modifier depositWbtc(uint256 amount) {
+        if (amount == 0) {
+            vm.expectRevert(DSCEngine.DSCEngine__ZeroAmount.selector);
+            dscEngine.depositCollateral(wbtc, amount);
+        } else {
+            vm.expectEmit(true, true, false, true, address(dscEngine));
+            emit CollateralDeposited(DEPOSITER, wbtc, amount);
+            vm.prank(DEPOSITER);
+            dscEngine.depositCollateral(wbtc, amount);
+        }    
+        _;
+    }
+
+    function testNonCollateralizedTokenDeposit() public {
+        address token = makeAddr("lightbeam");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DSCEngine.DSCEngine__TokenCannotBeCollateralized.selector, 
+                token)
+            );
+        dscEngine.depositCollateral(token, 10e18);
+
+    }
+
+    function testDepositZeroEthCollateral() public depositWeth(0) {}
+
+    function testDepositZeroWbtcCollateral() public depositWbtc(0) {}
+
+    function testDepositWethAndWbtcCollateral() public depositWeth(STARTING_WETH_BALANCE) depositWbtc(STARTING_WBTC_BALANCE) {
+        uint256 wbtcDeposited = dscEngine.getCollateralDepositedByUser(wbtc, DEPOSITER);
+        uint256 wethDeposited = dscEngine.getCollateralDepositedByUser(weth, DEPOSITER);
+        assertEq(wbtcDeposited, STARTING_WBTC_BALANCE);
+        assertEq(wethDeposited, STARTING_WETH_BALANCE);
+    }
+
     function testAccountCollateralValueInUsdWhenWbtcCollateral() public {
         uint256 DEPOSIT_AMOUNT = 0.5 ether;
-
         uint256 expectedUsdValue = 45_000 ether; // 90_000 * .5 +  = 45_000e18
 
         vm.startPrank(DEPOSITER);
@@ -54,7 +111,6 @@ contract DSCEngineTest is Test , CodeConstants{
 
     function testAccountCollateralValueInUsdWhenWethCollateral() public {
         uint256 DEPOSIT_AMOUNT = 7.205 ether;
-
         uint256 expectedUsdValue = 21_615 ether; // 3000 * 7.205 +  = 21_615e18
 
         vm.startPrank(DEPOSITER);
@@ -67,7 +123,6 @@ contract DSCEngineTest is Test , CodeConstants{
     }
 
     function testAccountCollateralValueInUsdWhenBothCollateral() public {
-
         uint256 expectedUsdValue = 135_000 ether; // 3000 * 15 + 90_000 * 1 = 135_000e18
 
         vm.startPrank(DEPOSITER);
@@ -81,7 +136,6 @@ contract DSCEngineTest is Test , CodeConstants{
     }
 
     function testAccountCollateralValueInUsdWhenNoCollateral() public view {
-
         uint256 totalCollateralValueInUsd = dscEngine.getAccountCollateralValueInUsd(DEPOSITER);
         assertEq(totalCollateralValueInUsd, 0);
     }
