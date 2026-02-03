@@ -75,6 +75,25 @@ contract DSCEngineTest is Test , CodeConstants{
         _;
     }
 
+    address[] public priceFeeds; 
+    address[] public tokenAddresses;
+
+    function testConstructorInitialisationPass() public { 
+        priceFeeds.push(wbtcUsdPriceFeed);
+        priceFeeds.push(wethUsdPriceFeed);
+        tokenAddresses.push(wbtc);
+        tokenAddresses.push(weth);
+        new DSCEngine(tokenAddresses, priceFeeds, address(dsc));
+    }
+
+    function testRevertsIfLengthMismatchForPriceFeedsAndTokens() public {
+        priceFeeds.push(wbtcUsdPriceFeed);
+        priceFeeds.push(wethUsdPriceFeed);
+        tokenAddresses.push(wbtc);
+        vm.expectRevert(DSCEngine.DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength.selector);
+        new DSCEngine(tokenAddresses, priceFeeds, address(dsc));
+    }
+
     function testNonCollateralizedTokenDeposit() public {
         address token = makeAddr("lightbeam");
         vm.expectRevert(
