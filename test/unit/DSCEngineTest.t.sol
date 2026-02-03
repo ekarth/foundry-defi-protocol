@@ -24,6 +24,8 @@ contract DSCEngineTest is Test , CodeConstants{
     address DEPOSITER = makeAddr("depositer");
     uint256 STARTING_WETH_BALANCE = 15 ether;
     uint256 STARTING_WBTC_BALANCE = 1 ether;
+    uint256 DEPOSIT_AMOUNT = 0.5 ether; // deposit amount when not whole balance deposited
+
 
     // DSCEngine contract events
     event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
@@ -116,42 +118,37 @@ contract DSCEngineTest is Test , CodeConstants{
         assertEq(wethDeposited, STARTING_WETH_BALANCE);
     }
 
-    function testAccountCollateralValueInUsdWhenWbtcCollateral() public {
-        uint256 DEPOSIT_AMOUNT = 0.5 ether;
+    function testRevertIfDepositNotSupportedCollateral() public {
+        ERC20Mock randToken = new ERC20Mock("RAND", "RAND", DEPOSITER, STARTING_WETH_BALANCE);
+        vm.expectRevert(
+            abi.encodeWithSelector(DSCEngine.DSCEngine__TokenCannotBeCollateralized.selector,
+            (address(randToken))
+            )
+        );
+        vm.prank(DEPOSITER);
+        dscEngine.depositCollateral(address(randToken), STARTING_WETH_BALANCE);
+    }
+
+    function testAccountCollateralValueInUsdWhenWbtcCollateral() public depositWbtc(DEPOSIT_AMOUNT) {
         uint256 expectedUsdValue = 45_000 ether; // 90_000 * .5 +  = 45_000e18
 
-        vm.startPrank(DEPOSITER);
-        dscEngine.depositCollateral(wbtc, DEPOSIT_AMOUNT);
-        vm.stopPrank();
-
         uint256 totalCollateralValueInUsd = dscEngine.getAccountCollateralValueInUsd(DEPOSITER);
         assertEq(totalCollateralValueInUsd, expectedUsdValue);
     }
 
-    function testAccountCollateralValueInUsdWhenWethCollateral() public {
-        uint256 DEPOSIT_AMOUNT = 7.205 ether;
-        uint256 expectedUsdValue = 21_615 ether; // 3000 * 7.205 +  = 21_615e18
-
-        vm.startPrank(DEPOSITER);
-        dscEngine.depositCollateral(weth, DEPOSIT_AMOUNT);
-        vm.stopPrank();
+    function testAccountCollateralValueInUsdWhenWethCollateral() public depositWeth(DEPOSIT_AMOUNT) {
+        uint256 expectedUsdValue = 1500 ether; // 3000 * 0.5 +  = 1500e18
 
         uint256 totalCollateralValueInUsd = dscEngine.getAccountCollateralValueInUsd(DEPOSITER);
         assertEq(totalCollateralValueInUsd, expectedUsdValue);
 
     }
 
-    function testAccountCollateralValueInUsdWhenBothCollateral() public {
+    function testAccountCollateralValueInUsdWhenBothCollateral() public depositWeth(STARTING_WETH_BALANCE) depositWbtc(STARTING_WBTC_BALANCE) {
         uint256 expectedUsdValue = 135_000 ether; // 3000 * 15 + 90_000 * 1 = 135_000e18
 
-        vm.startPrank(DEPOSITER);
-        dscEngine.depositCollateral(wbtc, STARTING_WBTC_BALANCE);
-        dscEngine.depositCollateral(weth, STARTING_WETH_BALANCE);
-        vm.stopPrank();
-
         uint256 totalCollateralValueInUsd = dscEngine.getAccountCollateralValueInUsd(DEPOSITER);
         assertEq(totalCollateralValueInUsd, expectedUsdValue);
-
     }
 
     function testAccountCollateralValueInUsdWhenNoCollateral() public view {
