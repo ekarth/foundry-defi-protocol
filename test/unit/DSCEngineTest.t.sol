@@ -129,30 +129,41 @@ contract DSCEngineTest is Test , CodeConstants{
         dscEngine.depositCollateral(address(randToken), STARTING_WETH_BALANCE);
     }
 
-    function testAccountCollateralValueInUsdWhenWbtcCollateral() public depositWbtc(DEPOSIT_AMOUNT) {
-        uint256 expectedUsdValue = 45_000 ether; // 90_000 * .5 +  = 45_000e18
-
-        uint256 totalCollateralValueInUsd = dscEngine.getAccountCollateralValueInUsd(DEPOSITER);
-        assertEq(totalCollateralValueInUsd, expectedUsdValue);
+    function testGetAccountInfoWhenWbtcCollateral() public depositWbtc(DEPOSIT_AMOUNT) {
+        uint256 expectedCollateralUsdValue = 45_000 ether; // 90_000 * .5 +  = 45_000e18
+        uint256 expectedDscMinted = 0;
+        (uint256 totalDscMinted, uint256 totalCollateralValueInUsd) = dscEngine.getAccountInfo(DEPOSITER);
+        assertEq(totalCollateralValueInUsd, expectedCollateralUsdValue);
+        assertEq(totalDscMinted, expectedDscMinted);
     }
 
-    function testAccountCollateralValueInUsdWhenWethCollateral() public depositWeth(DEPOSIT_AMOUNT) {
-        uint256 expectedUsdValue = 1500 ether; // 3000 * 0.5 +  = 1500e18
+    function testGetAccountInfoWhenWethCollateral() public depositWeth(DEPOSIT_AMOUNT) {
+        uint256 expectedCollateralUsdValue = 1500 ether; // 3_000 * .5 +  = 15_00e18
+        uint256 expectedDscMinted = 0;
+        (uint256 totalDscMinted, uint256 totalCollateralValueInUsd) = dscEngine.getAccountInfo(DEPOSITER);
+        assertEq(totalCollateralValueInUsd, expectedCollateralUsdValue);
+        assertEq(totalDscMinted, expectedDscMinted);
+    }
 
-        uint256 totalCollateralValueInUsd = dscEngine.getAccountCollateralValueInUsd(DEPOSITER);
-        assertEq(totalCollateralValueInUsd, expectedUsdValue);
+    function testGetAccountInfoWhenBothCollateral() public depositWeth(STARTING_WETH_BALANCE) depositWbtc(STARTING_WBTC_BALANCE) {
+        uint256 expectedCollateralUsdValue = 135_000 ether; // 3000 * 15 + 90_000 * 1 = 135_000e18
+        uint256 expectedDscMinted = 0;
+        (uint256 totalDscMinted, uint256 totalCollateralValueInUsd) = dscEngine.getAccountInfo(DEPOSITER);
+        assertEq(totalCollateralValueInUsd, expectedCollateralUsdValue);
+        assertEq(totalDscMinted, expectedDscMinted);
+    }
+
+    function testGetAccountInfoWhenNoCollateral() public view {
+        uint256 expectedCollateralUsdValue = 0;
+        uint256 expectedDscMinted = 0;
+        (uint256 totalDscMinted, uint256 totalCollateralValueInUsd) = dscEngine.getAccountInfo(DEPOSITER);
+        assertEq(totalCollateralValueInUsd, expectedCollateralUsdValue);
+        assertEq(totalDscMinted, expectedDscMinted);
+    }
+
+    function testGetAccountInfoWhenOnlyCollateralDeposited() public {
 
     }
 
-    function testAccountCollateralValueInUsdWhenBothCollateral() public depositWeth(STARTING_WETH_BALANCE) depositWbtc(STARTING_WBTC_BALANCE) {
-        uint256 expectedUsdValue = 135_000 ether; // 3000 * 15 + 90_000 * 1 = 135_000e18
-
-        uint256 totalCollateralValueInUsd = dscEngine.getAccountCollateralValueInUsd(DEPOSITER);
-        assertEq(totalCollateralValueInUsd, expectedUsdValue);
-    }
-
-    function testAccountCollateralValueInUsdWhenNoCollateral() public view {
-        uint256 totalCollateralValueInUsd = dscEngine.getAccountCollateralValueInUsd(DEPOSITER);
-        assertEq(totalCollateralValueInUsd, 0);
-    }
+    // function test
 }
