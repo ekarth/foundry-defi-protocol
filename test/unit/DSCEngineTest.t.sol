@@ -25,7 +25,8 @@ contract DSCEngineTest is Test , CodeConstants{
     uint256 STARTING_WETH_BALANCE = 15 ether;
     uint256 STARTING_WBTC_BALANCE = 1 ether;
     uint256 DEPOSIT_AMOUNT = 0.5 ether; // deposit amount when not whole balance deposited
-
+    uint256 DSC_TO_MINT = 100e18;
+    uint256 MAX_DSC_TO_MINT = type(uint256).max;
 
     // DSCEngine contract events
     event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
@@ -80,6 +81,7 @@ contract DSCEngineTest is Test , CodeConstants{
     address[] public priceFeeds; 
     address[] public tokenAddresses;
 
+    // CONSTRUCTOR
     function testConstructorInitialisationPass() public { 
         priceFeeds.push(wbtcUsdPriceFeed);
         priceFeeds.push(wethUsdPriceFeed);
@@ -107,6 +109,8 @@ contract DSCEngineTest is Test , CodeConstants{
 
     }
 
+
+    // DEPOSIT COLLATERAL
     function testDepositZeroEthCollateral() public depositWeth(0) {}
 
     function testDepositZeroWbtcCollateral() public depositWbtc(0) {}
@@ -129,6 +133,7 @@ contract DSCEngineTest is Test , CodeConstants{
         dscEngine.depositCollateral(address(randToken), STARTING_WETH_BALANCE);
     }
 
+    // ACCOUNT INFO
     function testGetAccountInfoWhenWbtcCollateral() public depositWbtc(DEPOSIT_AMOUNT) {
         uint256 expectedCollateralUsdValue = 45_000 ether; // 90_000 * .5 +  = 45_000e18
         uint256 expectedDscMinted = 0;
@@ -161,9 +166,33 @@ contract DSCEngineTest is Test , CodeConstants{
         assertEq(totalDscMinted, expectedDscMinted);
     }
 
-    function testGetAccountInfoWhenOnlyCollateralDeposited() public {
-
+    // MINT DSC
+    function testMintDscRevertsIfZeroDscTokensToMint() public depositWeth(STARTING_WETH_BALANCE) {
+        vm.prank(DEPOSITER);
+        vm.expectRevert(DSCEngine.DSCEngine__ZeroAmount.selector);
+        dscEngine.mintDsc(0);
     }
 
-    // function test
+    function testMintDscRevertsIfHealthFactorBreaks() public depositWeth(STARTING_WETH_BALANCE) {
+        vm.prank(DEPOSITER);
+        vm.expectRevert(DSCEngine.DSCEngine__BreaksHealthFactor.selector);
+        dscEngine.mintDsc(MAX_DSC_TO_MINT);
+    }
+
+    function testMintDscMintsDscToUser() public depositWeth(STARTING_WETH_BALANCE) {
+        uint256 expectedUserDscBalance = DSC_TO_MINT;
+        uint256 expectedTotalDscMinted = DSC_TO_MINT;
+        vm.prank(DEPOSITER);
+        vm.expectEmit(true, false, false, true, address(dscEngine));
+        emit DscMinted(DEPOSITER, DSC_TO_MINT);
+        dscEngine.mintDsc(DSC_TO_MINT);
+
+        uint256 userDscBalance = dscEngine.getDscMintedByUser(DEPOSITER);
+        uint256 totalDscMinted = dscEngine.getTotalDscMinted();
+        assertEq(expectedUserDscBalance, dsc.balanceOf(DEPOSITER)); // validating if tokens were transferred
+        assertEq(expectedUserDscBalance, userDscBalance);
+        assertEq(expectedTotalDscMinted, totalDscMinted);
+    }
+
+    
 }
