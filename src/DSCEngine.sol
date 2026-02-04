@@ -128,8 +128,7 @@ contract DSCEngine is ReentrancyGuard {
      * @param collateralAmount amount of collateral tokens to deposit (in token decimals)
      * @param amountDscToMint Amount of DSC tokens to mint to the caller (18 decimals).
      * 
-     */
-    
+     */    
     function depositCollateralAndMintDsc(
         address collateralTokenAddress,
         uint256 collateralAmount,
@@ -208,7 +207,7 @@ contract DSCEngine is ReentrancyGuard {
             revert DSCEngine__HealthFactorOk();
         }
 
-        uint256 tokenAmountFromDebtToCover = getAmountCollateralFromUSD(collateralTokenAddress, debtToCover);
+        uint256 tokenAmountFromDebtToCover = getAmountCollateralFromUsd(collateralTokenAddress, debtToCover);
         // bonus for the liquidator
         uint256 bonusCollateral = (tokenAmountFromDebtToCover * LIQUIDATION_BONUS) / LIQUIDATION_PRECISION;
         uint256 totalCollateralToRedeem = tokenAmountFromDebtToCover + bonusCollateral;
@@ -372,7 +371,7 @@ contract DSCEngine is ReentrancyGuard {
      * @param usdValueInWei USD value to convert, with 1e18 precision.
      * @return collateralAmount Amount of collateral tokens equivalent to the USD value.
      */
-    function getAmountCollateralFromUSD(
+    function getAmountCollateralFromUsd(
         address collateralTokenAddress, 
         uint256 usdValueInWei
     ) 
@@ -480,18 +479,27 @@ contract DSCEngine is ReentrancyGuard {
 
     }
 
-    function _redeemCollateral(address collateralTokenAddress, uint256 collateralAmount, address from, address to) private {
-        if (collateralAmount > s_collateralDeposited[from][collateralTokenAddress]) {
-            revert DSCEngine__RedeemMoreCollateralThanDeposited();
+    /**@notice Returns health factor for a user's account.
+     * @dev 
+     *  1. Assumes 1 DSC = 1 USD always.
+     *  2. Applies liquidation threshold to the collateral value. 
+     *  3. Returns a value with 1e18 precision. 
+     * @param collateralValue Value in USD with 1e18 precision.
+     * @param dscMinted Number of DSC minted against the collateral (18 decimals).
+     */
+    function _calculateHealthFactor(
+        uint256 collateralValue, 
+        uint256 dscMinted
+    )
+        internal 
+        pure
+        returns (uint256) 
+    {
+        if (dscMinted == 0) {
+            return type(uint256).max;
         }
-
-        s_collateralDeposited[from][collateralTokenAddress] -= collateralAmount;
-        emit CollateralRedeemed(from, to, collateralTokenAddress, collateralAmount);
-        bool success = IERC20(collateralTokenAddress).transfer(to, collateralAmount);
-
-        if (!success) {
-            revert DSCEngine__CollateralRedeemFailed(to, collateralTokenAddress);
-        }
+        uint256 collateralAdjustedForThreshold = (LIQUIDATION_THRESHOLD * collateralValue) / LIQUIDATION_PRECISION; 
+        return (collateralAdjustedForThreshold * PRECISION) / dscMinted;
     }
 
     /**
@@ -532,6 +540,29 @@ contract DSCEngine is ReentrancyGuard {
         return ERC20(token).decimals();
     }
 
+    /**
+     * @dev Returns the health factor with 1e18 precision.
+     * Utilises `_calculateHealthFactor` to calculate the health factor.
+     * @param account Address to calculate health factor for.
+     */
+    function _healthFactor(address account) internal view returns (uint256) {
+        (uint256 dscMinted, uint256 collateralValue) = getAccountInfo(account);
+        return _calculateHealthFactor(collateralValue, dscMinted);
+    }
+    
+    function _redeemCollateral(address collateralTokenAddress, uint256 collateralAmount, address from, address to) private {
+        if (collateralAmount > s_collateralDeposited[from][collateralTokenAddress]) {
+            revert DSCEngine__RedeemMoreCollateralThanDeposited();
+        }
+
+        s_collateralDeposited[from][collateralTokenAddress] -= collateralAmount;
+        emit CollateralRedeemed(from, to, collateralTokenAddress, collateralAmount);
+        bool success = IERC20(collateralTokenAddress).transfer(to, collateralAmount);
+
+        if (!success) {
+            revert DSCEngine__CollateralRedeemFailed(to, collateralTokenAddress);
+        }
+    }
 
     /**
      * @dev Reverts if an `account`'s health factor is less than MIN_HEALTH_FACTOR.
@@ -545,38 +576,5 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
-    /**
-     * @dev Returns the health factor with 1e18 precision.
-     * Utilises `_calculateHealthFactor` to calculate the health factor.
-     * @param account Address to calculate health factor for.
-     */
-    function _healthFactor(address account) internal view returns (uint256) {
-        (uint256 dscMinted, uint256 collateralValue) = getAccountInfo(account);
-        return _calculateHealthFactor(collateralValue, dscMinted);
-    }
 
-    /**@notice Returns health factor for a user's account.
-     * @dev 
-     *  1. Assumes 1 DSC = 1 USD always.
-     *  2. Applies liquidation threshold to the collateral value. 
-     *  3. Returns a value with 1e18 precision. 
-     * @param collateralValue Value in USD with 1e18 precision.
-     * @param dscMinted Number of DSC minted against the collateral (18 decimals).
-     */
-    function _calculateHealthFactor(
-        uint256 collateralValue, 
-        uint256 dscMinted
-    )
-        internal 
-        pure
-        returns (uint256) 
-    {
-        if (dscMinted == 0) {
-            return type(uint256).max;
-        }
-        uint256 collateralAdjustedForThreshold = (LIQUIDATION_THRESHOLD * collateralValue) / LIQUIDATION_PRECISION; 
-        return (collateralAdjustedForThreshold * PRECISION) / dscMinted;
-    }
-
-    
 }
