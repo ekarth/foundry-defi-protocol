@@ -32,7 +32,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__BreaksHealthFactor();
     error DSCEngine__InvalidCollateralPrice(int256 price);
     error DSCEngine__DscMintFailed();
-    error DSCEngine__RedeemMoreCollateralThanDeposited();
+    error DSCEngine__RedeemMoreCollateralThanDeposited(address token, uint256 tokensDeposited);
     error DSCEngine__CollateralRedeemFailed(address user, address token);
     error DSCEngine__TransferFailed();
     error DSCEngine__HealthFactorOk();
@@ -422,6 +422,7 @@ contract DSCEngine is ReentrancyGuard {
      * - Enforces that the caller remains sufficiently collateralized.
      *
      * Reverts if:
+     * - `collateralTokenAddress` is not the supported ERC20 collateral token.
      * - `collateralAmount` is zero.
      * - The caller attempts to redeem more collateral than deposited.
      * - Transfer {ERC20-transferFrom} call fails for the collateral token.
@@ -435,6 +436,7 @@ contract DSCEngine is ReentrancyGuard {
         uint256 collateralAmount
     ) 
         public 
+        isTokenAllowed(collateralTokenAddress)
         greaterThanZero(collateralAmount) 
         nonReentrant
     {
@@ -549,10 +551,22 @@ contract DSCEngine is ReentrancyGuard {
         (uint256 dscMinted, uint256 collateralValue) = getAccountInfo(account);
         return _calculateHealthFactor(collateralValue, dscMinted);
     }
-    
+
+    /**
+     * @dev Redeems collateral tokens from protocol deposited by address `from` to address `to`.
+     * - emits {CollateralRedeemed} event.
+     * Reverts if:
+     * - The caller attempts to redeem more collateral than deposited by `from`.
+     * - {ERC20-transfer} call to move tokens to `to` address fails.
+     * 
+     * @param collateralTokenAddress Address of a ERC20 collateral token.
+     * @param collateralAmount Count of collateral tokens to redeem.
+     * @param from Address from which collateral is to be redeemed.
+     * @param to Address to which collateral to be transferred.
+     */
     function _redeemCollateral(address collateralTokenAddress, uint256 collateralAmount, address from, address to) private {
         if (collateralAmount > s_collateralDeposited[from][collateralTokenAddress]) {
-            revert DSCEngine__RedeemMoreCollateralThanDeposited();
+            revert DSCEngine__RedeemMoreCollateralThanDeposited(collateralTokenAddress, s_collateralDeposited[from][collateralTokenAddress]);
         }
 
         s_collateralDeposited[from][collateralTokenAddress] -= collateralAmount;
