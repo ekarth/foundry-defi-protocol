@@ -78,6 +78,21 @@ contract DSCEngineTest is Test , CodeConstants{
         _;
     }
 
+    modifier mintDsc(uint256 amount) {
+        if (amount == 0) {
+            vm.expectRevert(DSCEngine.DSCEngine__ZeroAmount.selector);
+            dscEngine.mintDsc(amount);
+        } else {
+            vm.expectEmit(true, true, false, true, address(dscEngine));
+            emit DscMinted(DEPOSITER, amount);
+            vm.startPrank(DEPOSITER);
+            dscEngine.mintDsc(amount);
+            dsc.approve(address(dscEngine), type(uint256).max);
+            vm.stopPrank();
+        }    
+        _; 
+    }
+
     address[] public priceFeeds; 
     address[] public tokenAddresses;
 
@@ -194,6 +209,7 @@ contract DSCEngineTest is Test , CodeConstants{
         assertEq(expectedTotalDscMinted, totalDscMinted);
     }
 
+    // DEPOSIT COLLATERAL AND MINT DSC
     function testDepositCollateralAndMintDscRevertsWhenHealthFactorBreaks() public  {
         vm.prank(DEPOSITER);
         vm.expectRevert(DSCEngine.DSCEngine__BreaksHealthFactor.selector);
@@ -208,6 +224,43 @@ contract DSCEngineTest is Test , CodeConstants{
         uint256 userDscBalance = dscEngine.getDscMintedByUser(DEPOSITER);
         assertEq(expectedUserDscBalance, dsc.balanceOf(DEPOSITER)); // validating if tokens were transferred
         assertEq(expectedUserDscBalance, userDscBalance);
+    }
+
+    // BURN DSC
+    function testBurnDscRevertsWhenZeroDscToBurn() public depositWeth(STARTING_WETH_BALANCE) mintDsc(100) {
+        vm.prank(DEPOSITER);
+        vm.expectRevert(DSCEngine.DSCEngine__ZeroAmount.selector);
+        dscEngine.burnDsc(0);
+    }
+
+    function testBurnDscToBurnAllDsc() public depositWeth(STARTING_WETH_BALANCE) mintDsc(DSC_TO_MINT) {
+        uint256 expectedDscAfterBurn = 0;
+        vm.prank(DEPOSITER);
+        dscEngine.burnDsc(DSC_TO_MINT);
+        assertEq(expectedDscAfterBurn, dscEngine.getDscMintedByUser(DEPOSITER));
+        assertEq(expectedDscAfterBurn, dsc.balanceOf(DEPOSITER));
+    }
+
+    function testBurnDscToBurnMoreDsc() public depositWeth(STARTING_WETH_BALANCE) mintDsc(DSC_TO_MINT) {
+
+        uint256 dscToBurn = DSC_TO_MINT + ((DSC_TO_MINT * 10) / 100);
+        uint256 expectedDscAfterBurn = 0;
+        vm.prank(DEPOSITER);
+        dscEngine.burnDsc(dscToBurn);
+        assertEq(expectedDscAfterBurn, dscEngine.getDscMintedByUser(DEPOSITER));
+        assertEq(expectedDscAfterBurn, dsc.balanceOf(DEPOSITER));
+    }
+
+    function testBurnDscToBurnLessDsc() public depositWeth(STARTING_WETH_BALANCE) mintDsc(DSC_TO_MINT) {
+
+        uint256 expectedDscAfterBurn = (DSC_TO_MINT * 10) / 100;
+        uint256 dscToBurn = DSC_TO_MINT - expectedDscAfterBurn;
+        vm.prank(DEPOSITER);
+        dscEngine.burnDsc(dscToBurn);
+        assertEq(expectedDscAfterBurn, dscEngine.getDscMintedByUser(DEPOSITER));
+        assertEq(expectedDscAfterBurn, dsc.balanceOf(DEPOSITER));
+        // 90000000000000000000
+        // 10000000000000000000
     }
     
 }
