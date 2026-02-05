@@ -194,5 +194,20 @@ contract DSCEngineTest is Test , CodeConstants{
         assertEq(expectedTotalDscMinted, totalDscMinted);
     }
 
+    function testDepositCollateralAndMintDscRevertsWhenHealthFactorBreaks() public  {
+        vm.prank(DEPOSITER);
+        vm.expectRevert(DSCEngine.DSCEngine__BreaksHealthFactor.selector);
+        dscEngine.depositCollateralAndMintDsc(weth, STARTING_WETH_BALANCE, MAX_DSC_TO_MINT);
+    }
+
+    function testDepositCollateralAndMintDscPass() public {
+        uint256 expectedUserDscBalance = DSC_TO_MINT;
+        vm.prank(DEPOSITER);
+        dscEngine.depositCollateralAndMintDsc(weth, STARTING_WETH_BALANCE, DSC_TO_MINT);
+
+        uint256 userDscBalance = dscEngine.getDscMintedByUser(DEPOSITER);
+        assertEq(expectedUserDscBalance, dsc.balanceOf(DEPOSITER)); // validating if tokens were transferred
+        assertEq(expectedUserDscBalance, userDscBalance);
+    }
     
 }
