@@ -26,7 +26,7 @@ contract DSCEngineTest is Test , CodeConstants{
     uint256 STARTING_WBTC_BALANCE = 1 ether;
     uint256 DEPOSIT_AMOUNT = 0.5 ether; // deposit amount when not whole balance deposited
     uint256 DSC_TO_MINT = 100e18;
-    uint256 MAX_DSC_TO_MINT = type(uint256).max;
+    uint256 MIN_HEALTH_FACTOR = 1e18;
 
     // DSCEngine contract events
     event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
@@ -191,7 +191,7 @@ contract DSCEngineTest is Test , CodeConstants{
     function testMintDscRevertsIfHealthFactorBreaks() public depositWeth(STARTING_WETH_BALANCE) {
         vm.prank(DEPOSITER);
         vm.expectRevert(DSCEngine.DSCEngine__BreaksHealthFactor.selector);
-        dscEngine.mintDsc(MAX_DSC_TO_MINT);
+        dscEngine.mintDsc(UINT256_MAX);
     }
 
     function testMintDscMintsDscToUser() public depositWeth(STARTING_WETH_BALANCE) {
@@ -213,7 +213,7 @@ contract DSCEngineTest is Test , CodeConstants{
     function testDepositCollateralAndMintDscRevertsWhenHealthFactorBreaks() public  {
         vm.prank(DEPOSITER);
         vm.expectRevert(DSCEngine.DSCEngine__BreaksHealthFactor.selector);
-        dscEngine.depositCollateralAndMintDsc(weth, STARTING_WETH_BALANCE, MAX_DSC_TO_MINT);
+        dscEngine.depositCollateralAndMintDsc(weth, STARTING_WETH_BALANCE, UINT256_MAX);
     }
 
     function testDepositCollateralAndMintDscPass() public {
@@ -260,5 +260,81 @@ contract DSCEngineTest is Test , CodeConstants{
         assertEq(expectedDscAfterBurn, dscEngine.getDscMintedByUser(DEPOSITER));
         assertEq(expectedDscAfterBurn, dsc.balanceOf(DEPOSITER));
     }
+
+    // REDEEM COLLATERAL
+    function testRedeemCollateralRevertsWhenNotSupportedCollateralRedeem() public depositWeth(STARTING_WETH_BALANCE) {
+        address token = makeAddr("killer");
+        vm.prank(DEPOSITER);
+        vm.expectRevert(
+            abi.encodeWithSelector(DSCEngine.DSCEngine__NotSupportedCollatralizedToken.selector, token));
+        dscEngine.redeemCollateral(token, STARTING_WETH_BALANCE);
+    }
     
+    function testRedeemCollateralRevertsWhenNoTokensToRedeem() public depositWeth(STARTING_WETH_BALANCE) {
+        vm.prank(DEPOSITER);
+        vm.expectRevert(DSCEngine.DSCEngine__ZeroAmount.selector);
+        dscEngine.redeemCollateral(weth, 0);
+    }
+
+    function testRedeemCollateralRevertsWhenRedeemMoreCollateralThanDeposited() public depositWeth(STARTING_WETH_BALANCE) {
+        uint256 collateralToRedeem = UINT256_MAX;
+        vm.prank(DEPOSITER);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DSCEngine.DSCEngine__RedeemMoreCollateralThanDeposited.selector,
+                weth,
+                STARTING_WETH_BALANCE
+            )
+        );
+        dscEngine.redeemCollateral(weth, collateralToRedeem);
+    }
+
+    function testRedeemCollateralRevertsWhenHealthFactorBreaks() public depositWeth(STARTING_WETH_BALANCE) mintDsc(DSC_TO_MINT) {
+        vm.prank(DEPOSITER);
+        vm.expectRevert(DSCEngine.DSCEngine__BreaksHealthFactor.selector);
+        dscEngine.redeemCollateral(weth, STARTING_WETH_BALANCE);
+    }
+
+    function testRedeemCollateralPassWhenDscMinted() public depositWeth(STARTING_WETH_BALANCE) mintDsc(DSC_TO_MINT) {
+        uint256 collateralToRedeem = (STARTING_WETH_BALANCE * 10) / 100;
+        vm.expectEmit(true, true, true, true, address(dscEngine));
+        emit CollateralRedeemed(DEPOSITER, DEPOSITER, weth, collateralToRedeem);
+        vm.prank(DEPOSITER);
+        dscEngine.redeemCollateral(weth, collateralToRedeem);
+        
+        uint256 healthFactorAfterRedeem = dscEngine.getHealthFactor(DEPOSITER);
+        console.log("User health factor after redeeming collateral: ", healthFactorAfterRedeem);
+        assertGt(healthFactorAfterRedeem, MIN_HEALTH_FACTOR);
+    }
+
+    function testRedeemCollateralPassWhenNoDscMinted() public depositWeth(STARTING_WETH_BALANCE) {
+        uint256 collateralToRedeem = STARTING_WETH_BALANCE;
+        vm.expectEmit(true, true, true, true, address(dscEngine));
+        emit CollateralRedeemed(DEPOSITER, DEPOSITER, weth, collateralToRedeem);
+        vm.prank(DEPOSITER);
+        dscEngine.redeemCollateral(weth, collateralToRedeem);
+        
+        uint256 healthFactorAfterRedeem = dscEngine.getHealthFactor(DEPOSITER);
+        console.log("User health factor after redeeming collateral: ", healthFactorAfterRedeem);
+        assertEq(healthFactorAfterRedeem, UINT256_MAX);
+        assertEq(dscEngine.getCollateralDepositedByUser(weth, DEPOSITER), 0);
+    }
+
+    function testRedeemOneCollateralWhenBothDepositedAndDscMinted() public
+        depositWeth(STARTING_WETH_BALANCE)
+        depositWbtc(STARTING_WBTC_BALANCE) 
+        mintDsc(DSC_TO_MINT)
+    {
+        uint256 collateralToRedeem = STARTING_WETH_BALANCE;
+        vm.expectEmit(true, true, true, true, address(dscEngine));
+        emit CollateralRedeemed(DEPOSITER, DEPOSITER, weth, collateralToRedeem);
+        vm.prank(DEPOSITER);
+        dscEngine.redeemCollateral(weth, collateralToRedeem);
+        
+        uint256 healthFactorAfterRedeem = dscEngine.getHealthFactor(DEPOSITER);
+        console.log("User health factor after redeeming collateral: ", healthFactorAfterRedeem);
+        assertGt(healthFactorAfterRedeem, MIN_HEALTH_FACTOR);
+        assertEq(dscEngine.getCollateralDepositedByUser(weth, DEPOSITER), 0);
+        assertEq(dscEngine.getCollateralDepositedByUser(wbtc, DEPOSITER), STARTING_WBTC_BALANCE);
+    }
 }
