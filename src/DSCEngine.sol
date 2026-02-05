@@ -115,7 +115,6 @@ contract DSCEngine is ReentrancyGuard {
      * @dev
      *  1. Calls `depositCollateral` function to deposit collateral from caller.
      *  2. Calls `mintDsc` function to mint DSC to caller.
-     *  3. It is protected by reentrancy guard.
      * Reverts if:
      *  1. `collateralAmount` is 0.
      *  2. `collateralTokenAddress` is not an allowed collateral token.
@@ -135,7 +134,6 @@ contract DSCEngine is ReentrancyGuard {
         uint256 amountDscToMint
     ) 
         external 
-        nonReentrant 
     {
         depositCollateral(collateralTokenAddress, collateralAmount);
         mintDsc(amountDscToMint);
