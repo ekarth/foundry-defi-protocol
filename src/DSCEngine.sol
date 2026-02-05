@@ -26,7 +26,7 @@ contract DSCEngine is ReentrancyGuard {
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
     error DSCEngine__ZeroAmount();
-    error DSCEngine__TokenCannotBeCollateralized(address token);
+    error DSCEngine__NotSupportedCollatralizedToken(address token);
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error DSCEngine__CollateralDepositFailed(address user, address token);
     error DSCEngine__BreaksHealthFactor();
@@ -79,7 +79,7 @@ contract DSCEngine is ReentrancyGuard {
 
     modifier isTokenAllowed(address tokenAddress) {
         if(s_priceFeed[tokenAddress] == address(0)) {
-            revert DSCEngine__TokenCannotBeCollateralized(tokenAddress);
+            revert DSCEngine__NotSupportedCollatralizedToken(tokenAddress);
         }
         _;
     }

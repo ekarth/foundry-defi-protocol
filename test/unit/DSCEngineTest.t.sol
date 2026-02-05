@@ -117,7 +117,7 @@ contract DSCEngineTest is Test , CodeConstants{
         address token = makeAddr("lightbeam");
         vm.expectRevert(
             abi.encodeWithSelector(
-                DSCEngine.DSCEngine__TokenCannotBeCollateralized.selector, 
+                DSCEngine.DSCEngine__NotSupportedCollatralizedToken.selector, 
                 token)
             );
         dscEngine.depositCollateral(token, 10e18);
@@ -140,7 +140,7 @@ contract DSCEngineTest is Test , CodeConstants{
     function testRevertIfDepositNotSupportedCollateral() public {
         ERC20Mock randToken = new ERC20Mock("RAND", "RAND", DEPOSITER, STARTING_WETH_BALANCE);
         vm.expectRevert(
-            abi.encodeWithSelector(DSCEngine.DSCEngine__TokenCannotBeCollateralized.selector,
+            abi.encodeWithSelector(DSCEngine.DSCEngine__NotSupportedCollatralizedToken.selector,
             (address(randToken))
             )
         );
@@ -259,8 +259,6 @@ contract DSCEngineTest is Test , CodeConstants{
         dscEngine.burnDsc(dscToBurn);
         assertEq(expectedDscAfterBurn, dscEngine.getDscMintedByUser(DEPOSITER));
         assertEq(expectedDscAfterBurn, dsc.balanceOf(DEPOSITER));
-        // 90000000000000000000
-        // 10000000000000000000
     }
     
 }
