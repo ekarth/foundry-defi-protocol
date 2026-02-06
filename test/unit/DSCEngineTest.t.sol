@@ -362,6 +362,29 @@ contract DSCEngineTest is Test , CodeConstants{
         assertEq(expectedCollateralAmount, actualCollateralAmount);
     }
 
+    // LIQUIDATE
+    function testLiquidateRevertsWhenNotSupportedCollateral() public depositWeth(STARTING_WETH_BALANCE) {
+        address token = makeAddr("killer");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DSCEngine.DSCEngine__NotSupportedCollatralizedToken.selector,
+                token
+            )
+        );
+        dscEngine.liquidate(token, DEPOSITER, 100e18);
+
+    }
+
+    function testLiquidateWhenDebtToCoverIsZero() public depositWeth(STARTING_WETH_BALANCE) {
+        vm.expectRevert(DSCEngine.DSCEngine__ZeroAmount.selector);
+        dscEngine.liquidate(weth, DEPOSITER, 0);
+    }
+
+    function testLiquidateRevertsWhenUserHealthFactorIsMoreThanMinHealthFactor() public depositWeth(STARTING_WETH_BALANCE) mintDsc(10_000e18){
+        vm.expectRevert(DSCEngine.DSCEngine__HealthFactorOk.selector);
+        dscEngine.liquidate(weth, DEPOSITER, 100e18);
+    }
+
     // Getter functions
     // HEALTH FACTOR
     function testHealthFactorWhenNoDeposit() public view {
