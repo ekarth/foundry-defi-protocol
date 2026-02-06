@@ -337,4 +337,24 @@ contract DSCEngineTest is Test , CodeConstants{
         assertEq(dscEngine.getCollateralDepositedByUser(weth, DEPOSITER), 0);
         assertEq(dscEngine.getCollateralDepositedByUser(wbtc, DEPOSITER), STARTING_WBTC_BALANCE);
     }
+
+    // Getter functions
+    // HEALTH FACTOR
+    function testHealthFactorWhenNoDeposit() public view {
+        uint256 expectedHealthFactor = UINT256_MAX;
+        uint256 actualHealthFactor = dscEngine.getHealthFactor(DEPOSITER);
+        assertEq(expectedHealthFactor, actualHealthFactor);
+    }
+
+    function testHealthFactorWhenNoDscMinted() public depositWbtc(STARTING_WBTC_BALANCE) {
+        uint256 expectedHealthFactor = UINT256_MAX;
+        uint256 actualHealthFactor = dscEngine.getHealthFactor(DEPOSITER);
+        assertEq(expectedHealthFactor, actualHealthFactor);
+    }
+
+    function testHealthFactorWhenDscMinted() public depositWeth(STARTING_WETH_BALANCE) mintDsc(DSC_TO_MINT) {
+        uint256 expectedHealthFactor = 225 ether; //((3000 * 15 * .5)) / 100 * 1e18
+        uint256 actualHealthFactor = dscEngine.getHealthFactor(DEPOSITER);
+        assertEq(expectedHealthFactor, actualHealthFactor);
+    }
 }
