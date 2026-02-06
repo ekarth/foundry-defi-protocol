@@ -8,7 +8,6 @@ import {IERC20} from "@openzepplin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzepplin/contracts/token/ERC20/ERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
-
 /**
  * @title DSCEngine
  * @author Killer
@@ -377,11 +376,12 @@ contract DSCEngine is ReentrancyGuard {
         public 
         view
     returns(uint256) {
-        (, int price,,,) = AggregatorV3Interface(s_priceFeed[collateralTokenAddress]).latestRoundData();
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeed[collateralTokenAddress]);
+        (, int price,,,) = priceFeed.latestRoundData();
         if (price < 0) {
             revert DSCEngine__InvalidCollateralPrice(price);
         }
-        return (usdValueInWei * PRECISION) / (uint256(price) * (10 ** _getCollateralTokenDecimals(collateralTokenAddress)));
+        return (usdValueInWei * PRECISION) / (uint256(price) * (10 ** _getNormalisedDecimalsForTokenPrice(collateralTokenAddress)));
     }
     
     /**
@@ -525,9 +525,8 @@ contract DSCEngine is ReentrancyGuard {
             revert DSCEngine__InvalidCollateralPrice(answer);
         }
         uint8 collateralTokenDecimals = _getCollateralTokenDecimals(token);
-        uint8 decimalsInPriceFeed = priceFeed.decimals();
         // forge-lint: disable-next-line(unsafe-typecast)
-        uint256 price = uint256(answer) * (10 ** (collateralTokenDecimals - decimalsInPriceFeed));
+        uint256 price = uint256(answer) * (10 ** _getNormalisedDecimalsForTokenPrice(token));
         amountInUsd = (amount * price)/ ( 10 ** collateralTokenDecimals);
         return amountInUsd;
     }
@@ -538,6 +537,10 @@ contract DSCEngine is ReentrancyGuard {
      */
     function _getCollateralTokenDecimals(address token) internal view returns(uint8) {
         return ERC20(token).decimals();
+    }
+
+    function _getNormalisedDecimalsForTokenPrice(address token) private view returns(uint8) {
+        return _getCollateralTokenDecimals(token) - AggregatorV3Interface(s_priceFeed[token]).decimals();
     }
 
     /**
