@@ -6,6 +6,7 @@ import {DSCEngine, DecentralizedStableCoin} from "../../src/DSCEngine.sol";
 import {DeployDsc} from "../../script/DeployDsc.s.sol";
 import {HelperConfig, CodeConstants} from "../../script/HelperConfig.s.sol";
 import {ERC20Mock} from "../mocks/ERC20Mock.sol";
+import {MockV3Aggregator} from "../mocks/MockV3Aggregator.sol";
 
 contract DSCEngineTest is Test , CodeConstants{
     // contracts
@@ -336,6 +337,29 @@ contract DSCEngineTest is Test , CodeConstants{
         assertGt(healthFactorAfterRedeem, MIN_HEALTH_FACTOR);
         assertEq(dscEngine.getCollateralDepositedByUser(weth, DEPOSITER), 0);
         assertEq(dscEngine.getCollateralDepositedByUser(wbtc, DEPOSITER), STARTING_WBTC_BALANCE);
+    }
+
+    // GET AMOUNT COLLATERAL FROM USD
+    function testGetAmountCollateralFromUsdRevertsWhenTokenNotSupported() public {
+        uint256 usdAmountInWei = 100e18;
+        address token = makeAddr("killer");
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DSCEngine.DSCEngine__NotSupportedCollatralizedToken.selector,
+                token
+            )
+        );
+        dscEngine.getAmountCollateralFromUsd(token, usdAmountInWei);
+    }
+
+    function testGetAmountCollateralFromUsd() public {
+        uint256 usdAmountInWei = 100e18;
+        uint256 expectedCollateralAmount = 0.05 ether;
+        
+        MockV3Aggregator(wethUsdPriceFeed).updateAnswer(2_000e8); // update price for calculation
+        uint256 actualCollateralAmount = dscEngine.getAmountCollateralFromUsd(weth, usdAmountInWei);
+
+        assertEq(expectedCollateralAmount, actualCollateralAmount);
     }
 
     // Getter functions
