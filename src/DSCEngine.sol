@@ -31,12 +31,11 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__BreaksHealthFactor();
     error DSCEngine__InvalidCollateralPrice(int256 price);
     error DSCEngine__DscMintFailed();
-    error DSCEngine__RedeemMoreCollateralThanDeposited(address token, uint256 tokensDeposited);
+    error DSCEngine__RedeemMoreCollateralThanDeposited(address token, uint256 tokensDeposited, uint256 redeemAmount);
     error DSCEngine__CollateralRedeemFailed(address user, address token);
     error DSCEngine__TransferFailed();
     error DSCEngine__HealthFactorOk();
     error DSCEngine__HealthFactorNotImproved();
-
 
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
@@ -168,10 +167,11 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     /**
-     * @notice Liquidates an undercollateralized user by repaying their DSC debt in exchange for their collateral plus a 10% liquidation bonus.
+     * @notice Liquidates an undercollateralized user by repaying their DSC debt in exchange for their collateral plus a 10% liquidation bonus. Ensures that the amount of debt to cover (`debtToCover`) does not exceed the user's total DSC tokens borrowed.
      *
      * @dev
      * - The caller repays `debtToCover` DSC on behalf of `user`
+     * - If `debtToCover` is greater than the `user`'s outstanding debt, it is capped at the `user`'s maximum borrowed DSC tokens.
      * - The protocol converts the repaid debt into an equivalent amount of collateral
      * - A liquidation bonus is added and transferred to the caller
      * - The user's DSC debt is reduced and their collateral is seized
@@ -203,6 +203,12 @@ contract DSCEngine is ReentrancyGuard {
         if (userStartingHealthFactor >= MIN_HEALTH_FACTOR) {
             revert DSCEngine__HealthFactorOk();
         }
+
+        // updating debtToCover when more than the debt
+        if (debtToCover > s_DscMintedByUser[user]) {
+            debtToCover = s_DscMintedByUser[user];
+        }
+
 
         uint256 tokenAmountFromDebtToCover = getAmountCollateralFromUsd(collateralTokenAddress, debtToCover);
         // bonus for the liquidator
@@ -567,7 +573,7 @@ contract DSCEngine is ReentrancyGuard {
      */
     function _redeemCollateral(address collateralTokenAddress, uint256 collateralAmount, address from, address to) private {
         if (collateralAmount > s_collateralDeposited[from][collateralTokenAddress]) {
-            revert DSCEngine__RedeemMoreCollateralThanDeposited(collateralTokenAddress, s_collateralDeposited[from][collateralTokenAddress]);
+            revert DSCEngine__RedeemMoreCollateralThanDeposited(collateralTokenAddress, s_collateralDeposited[from][collateralTokenAddress], collateralAmount);
         }
 
         s_collateralDeposited[from][collateralTokenAddress] -= collateralAmount;
