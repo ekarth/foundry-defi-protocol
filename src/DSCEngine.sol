@@ -41,6 +41,7 @@ contract DSCEngine is ReentrancyGuard {
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
     DecentralizedStableCoin private immutable i_dsc;
+    address private immutable deployer;
     uint256 private constant LIQUIDATION_THRESHOLD = 50; // borrow half of the collateral
     uint256 private constant LIQUIDATION_PRECISION = 100;
     uint256 private constant PRECISION = 1e18;
@@ -102,6 +103,7 @@ contract DSCEngine is ReentrancyGuard {
         }
 
         i_dsc = DecentralizedStableCoin(dscAddress);
+        deployer = msg.sender;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -204,9 +206,10 @@ contract DSCEngine is ReentrancyGuard {
             revert DSCEngine__HealthFactorOk();
         }
 
+        uint256 userDebt = s_DscMintedByUser[user];
         // updating debtToCover when more than the debt
-        if (debtToCover > s_DscMintedByUser[user]) {
-            debtToCover = s_DscMintedByUser[user];
+        if (debtToCover > userDebt) {
+            debtToCover = userDebt;
         }
 
 
@@ -216,6 +219,10 @@ contract DSCEngine is ReentrancyGuard {
         uint256 totalCollateralToRedeem = tokenAmountFromDebtToCover + bonusCollateral;
         _redeemCollateral(collateralTokenAddress, totalCollateralToRedeem, user, msg.sender);
         _burnDsc(user, msg.sender, debtToCover);
+        
+        if (debtToCover == userDebt) {
+        _redeemCollateral(collateralTokenAddress, s_collateralDeposited[user][collateralTokenAddress], user, deployer);
+        }
 
         uint256 userEndingHealthFactor = _healthFactor(user);
         if (userEndingHealthFactor <= userStartingHealthFactor) {
