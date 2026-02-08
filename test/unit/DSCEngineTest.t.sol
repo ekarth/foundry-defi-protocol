@@ -2,7 +2,8 @@
 pragma solidity 0.8.19;
 
 import {Test, console} from "forge-std/Test.sol";
-import {DSCEngine, DecentralizedStableCoin} from "../../src/DSCEngine.sol";
+import {DSCEngine} from "../../src/DSCEngine.sol";
+import {DecentralizedStableCoin} from "../../src/DecentralizedStableCoin.sol";
 import {DeployDsc} from "../../script/DeployDsc.s.sol";
 import {HelperConfig, CodeConstants} from "../../script/HelperConfig.s.sol";
 import {ERC20Mock} from "../mocks/ERC20Mock.sol";
@@ -284,7 +285,8 @@ contract DSCEngineTest is Test , CodeConstants{
             abi.encodeWithSelector(
                 DSCEngine.DSCEngine__RedeemMoreCollateralThanDeposited.selector,
                 weth,
-                STARTING_WETH_BALANCE
+                STARTING_WETH_BALANCE,
+                collateralToRedeem
             )
         );
         dscEngine.redeemCollateral(weth, collateralToRedeem);
@@ -380,11 +382,94 @@ contract DSCEngineTest is Test , CodeConstants{
         dscEngine.liquidate(weth, DEPOSITER, 0);
     }
 
-    function testLiquidateRevertsWhenUserHealthFactorIsMoreThanMinHealthFactor() public depositWeth(STARTING_WETH_BALANCE) mintDsc(10_000e18){
+    function testLiquidateRevertsWhenUserHealthFactorIsMoreThanMinHealthFactor() public depositWeth(STARTING_WETH_BALANCE) mintDsc(10_000e18) {
         vm.expectRevert(DSCEngine.DSCEngine__HealthFactorOk.selector);
         dscEngine.liquidate(weth, DEPOSITER, 100e18);
     }
 
+    // used to test a scenario where the user deposited one collateral and borrowed DSC but the liqudidator wants another collateral (supported not-deposited) as the redeeming collateral
+    function testLiquidateWhenDebtToCoverMoreThanDebt() public depositWeth(STARTING_WETH_BALANCE) mintDsc(20_000 ether) {
+        uint256 debt = 20_000 ether;
+        uint256 dscToMint = 22_000 ether;
+        int256 priceForLiquidation = int256(2600 * (10 ** WETH_DECIMALS));
+
+        // Get DSC
+        ERC20Mock(wbtc).mint(address(this), STARTING_WBTC_BALANCE); // funding the contract
+        ERC20Mock(wbtc).approveInternal(address(this), address(dscEngine), STARTING_WBTC_BALANCE);
+        dscEngine.depositCollateralAndMintDsc(wbtc, STARTING_WBTC_BALANCE, dscToMint);
+        dsc.approve(address(dscEngine), dscToMint);
+
+        // update collateral price to be eligible for liquidation
+        MockV3Aggregator(wethUsdPriceFeed).updateAnswer(priceForLiquidation);
+
+        uint256 redeemedCollateral = dscEngine.getAmountCollateralFromUsd(weth, debt); // collateral amount against debt and not debtToCover
+        uint256 bonusCollateral = (10 * redeemedCollateral) / 100;
+        uint256 expectedRedeemedCollateral = redeemedCollateral + bonusCollateral;
+
+        // liquidate
+        vm.expectEmit(true, true, true, true, address(dscEngine));
+        emit CollateralRedeemed(DEPOSITER, address(this), weth, expectedRedeemedCollateral);
+        dscEngine.liquidate(weth, DEPOSITER, dscToMint);
+
+        assertEq(dsc.balanceOf(address(this)), dscToMint - debt);
+        assertEq(ERC20Mock(weth).balanceOf(address(this)), expectedRedeemedCollateral);
+        assertEq(dscEngine.getCollateralDepositedByUser(weth, DEPOSITER), 0);
+
+    }
+
+    function testLiquidateWhenDebtToCoverEqualsDebt() public depositWeth(STARTING_WETH_BALANCE) mintDsc(20_000 ether) {
+        uint256 debt = 20_000 ether;
+        uint256 dscToMint = 20_000 ether;
+        int256 priceForLiquidation = int256(2600 * (10 ** WETH_DECIMALS));
+
+        // Get DSC
+        ERC20Mock(wbtc).mint(address(this), STARTING_WBTC_BALANCE); // funding the contract
+        ERC20Mock(wbtc).approveInternal(address(this), address(dscEngine), STARTING_WBTC_BALANCE);
+        dscEngine.depositCollateralAndMintDsc(wbtc, STARTING_WBTC_BALANCE, dscToMint);
+        dsc.approve(address(dscEngine), dscToMint);
+
+        // update collateral price to be eligible for liquidation
+        MockV3Aggregator(wethUsdPriceFeed).updateAnswer(priceForLiquidation);
+
+        uint256 redeemedCollateral = dscEngine.getAmountCollateralFromUsd(weth, dscToMint); 
+        uint256 bonusCollateral = (10 * redeemedCollateral) / 100;
+        uint256 expectedRedeemedCollateral = redeemedCollateral + bonusCollateral;
+
+        // liquidate
+        vm.expectEmit(true, true, true, true, address(dscEngine));
+        emit CollateralRedeemed(DEPOSITER, address(this), weth, expectedRedeemedCollateral);
+        dscEngine.liquidate(weth, DEPOSITER, dscToMint);
+
+        assertEq(dsc.balanceOf(address(this)), dscToMint - debt);
+        assertEq(ERC20Mock(weth).balanceOf(address(this)), expectedRedeemedCollateral);
+        assertEq(dscEngine.getCollateralDepositedByUser(weth, DEPOSITER), 0);
+    }
+
+    function testLiquidatePartialLiquidation() public depositWeth(STARTING_WETH_BALANCE) mintDsc(20_000 ether) {
+        uint256 dscToMint = 10_000 ether;
+        int256 priceForLiquidation = int256(2600 * (10 ** WETH_DECIMALS));
+
+        // Get DSC
+        ERC20Mock(wbtc).mint(address(this), STARTING_WBTC_BALANCE); // funding the contract
+        ERC20Mock(wbtc).approveInternal(address(this), address(dscEngine), STARTING_WBTC_BALANCE);
+        dscEngine.depositCollateralAndMintDsc(wbtc, STARTING_WBTC_BALANCE, dscToMint);
+        dsc.approve(address(dscEngine), dscToMint);
+
+        // update collateral price to be eligible for liquidation
+        MockV3Aggregator(wethUsdPriceFeed).updateAnswer(priceForLiquidation);
+
+        uint256 redeemedCollateral = dscEngine.getAmountCollateralFromUsd(weth, dscToMint);
+        uint256 bonusCollateral = (10 * redeemedCollateral) / 100;
+        uint256 expectedRedeemedCollateral = redeemedCollateral + bonusCollateral;
+
+        // liquidate
+        vm.expectEmit(true, true, true, true, address(dscEngine));
+        emit CollateralRedeemed(DEPOSITER, address(this), weth, expectedRedeemedCollateral);
+        dscEngine.liquidate(weth, DEPOSITER, dscToMint);
+
+        assertEq(dsc.balanceOf(address(this)), 0);
+        assertEq(ERC20Mock(weth).balanceOf(address(this)), expectedRedeemedCollateral);
+    }
     // Getter functions
     // HEALTH FACTOR
     function testHealthFactorWhenNoDeposit() public view {
