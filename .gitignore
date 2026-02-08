@@ -11,5 +11,9 @@ out/
 docs/
 lib/
 
+# Reports
+coverage/
+lcov.info
+
 # Dotenv file
 .env
