@@ -483,6 +483,30 @@ contract DSCEngineTest is Test , CodeConstants{
         assertEq(dsc.balanceOf(address(this)), 0);
         assertEq(ERC20Mock(weth).balanceOf(address(this)), expectedRedeemedCollateral);
     }
+
+    // GET ACCOUNT COLLATERAL VALUE IN USD
+    function testGetAccountCollateralValueInUsd() public depositWeth(STARTING_WETH_BALANCE) {
+        assertEq(dscEngine.getAccountCollateralValueInUsd(DEPOSITER), 45_000 ether);
+        MockV3Aggregator(wethUsdPriceFeed).updateAnswer(int256(2_100 * (10 ** WETH_DECIMALS)));
+        assertEq(dscEngine.getAccountCollateralValueInUsd(DEPOSITER), 31_500 ether);
+        assertEq(
+            dscEngine.getAccountCollateralValueInUsd(makeAddr("killer")),
+            0
+        );
+    }
+
+    function testGetAccountCollateralValueInUsdRevertsWhenNegativatePrice() public depositWeth(STARTING_WETH_BALANCE) {
+        int256 price = -1_000 * int256((10 ** WETH_DECIMALS));
+        MockV3Aggregator(wethUsdPriceFeed).updateAnswer(price);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DSCEngine.DSCEngine__InvalidCollateralPrice.selector,
+                price
+            )
+        );
+        dscEngine.getAccountCollateralValueInUsd(DEPOSITER);
+    }
+
     // Getter functions
     // HEALTH FACTOR
     function testHealthFactorWhenNoDeposit() public view {
