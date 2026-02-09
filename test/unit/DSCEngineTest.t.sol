@@ -364,6 +364,19 @@ contract DSCEngineTest is Test , CodeConstants{
         assertEq(expectedCollateralAmount, actualCollateralAmount);
     }
 
+    function testGetAmountCollateralFromUsdRevertsWhenNegativePrice() public {
+        int256 price = -1_000 * int256((10 ** WETH_DECIMALS));
+        MockV3Aggregator(wethUsdPriceFeed).updateAnswer(price);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                DSCEngine.DSCEngine__InvalidCollateralPrice.selector,
+                price
+            )
+        );
+        dscEngine.getAmountCollateralFromUsd(weth, DSC_TO_MINT);
+        
+    }
+
     // LIQUIDATE
     function testLiquidateRevertsWhenNotSupportedCollateral() public depositWeth(STARTING_WETH_BALANCE) {
         address token = makeAddr("killer");
