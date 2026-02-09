@@ -484,6 +484,42 @@ contract DSCEngineTest is Test , CodeConstants{
         assertEq(ERC20Mock(weth).balanceOf(address(this)), expectedRedeemedCollateral);
     }
 
+    // REDEEM COLLATERAL FOR DSC
+    function testRedeemCollateralForDscPartialRedeem() public depositWeth(STARTING_WETH_BALANCE) mintDsc(DSC_TO_MINT) {
+        uint256 dscToRedeem = DSC_TO_MINT / 2;
+        uint256 redeemCollateralAmount = STARTING_WETH_BALANCE / 2;
+
+        vm.expectEmit(true, true, true, true, address(dscEngine));
+        emit CollateralRedeemed(DEPOSITER, DEPOSITER, weth, redeemCollateralAmount);
+        vm.prank(DEPOSITER);
+        dscEngine.redeemCollateralForDsc(weth, redeemCollateralAmount, dscToRedeem);
+
+        assertEq(dscEngine.getCollateralDepositedByUser(weth, DEPOSITER), redeemCollateralAmount);
+        assertEq(dscEngine.getDscMintedByUser(DEPOSITER), dscToRedeem);
+    }
+
+    function testRedeemCollateralForDscFullRedeem() public depositWeth(STARTING_WETH_BALANCE) mintDsc(DSC_TO_MINT) {
+        uint256 dscToRedeem = DSC_TO_MINT;
+        uint256 redeemCollateralAmount = STARTING_WETH_BALANCE;
+
+        vm.expectEmit(true, true, true, true, address(dscEngine));
+        emit CollateralRedeemed(DEPOSITER, DEPOSITER, weth, redeemCollateralAmount);
+        vm.prank(DEPOSITER);
+        dscEngine.redeemCollateralForDsc(weth, redeemCollateralAmount, dscToRedeem);
+
+        assertEq(dscEngine.getCollateralDepositedByUser(weth, DEPOSITER), 0);
+        assertEq(dscEngine.getDscMintedByUser(DEPOSITER), 0);
+    }
+
+    function testRedeemCollateralForDscRevertsWhenHealthFactorBreaks() public depositWeth(STARTING_WETH_BALANCE) mintDsc(DSC_TO_MINT) {
+        uint256 dscToRedeem = DSC_TO_MINT / 2;
+        uint256 redeemCollateralAmount = STARTING_WETH_BALANCE;
+
+        vm.expectRevert(DSCEngine.DSCEngine__BreaksHealthFactor.selector);
+        vm.prank(DEPOSITER);
+        dscEngine.redeemCollateralForDsc(weth, redeemCollateralAmount, dscToRedeem);
+    }
+
     // GET ACCOUNT COLLATERAL VALUE IN USD
     function testGetAccountCollateralValueInUsd() public depositWeth(STARTING_WETH_BALANCE) {
         assertEq(dscEngine.getAccountCollateralValueInUsd(DEPOSITER), 45_000 ether);
